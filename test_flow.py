@@ -25,15 +25,17 @@ _TEST_DIR = tempfile.mkdtemp(prefix='woo_test_')
 _DB_FILE = os.path.join(_TEST_DIR, 'test_state.sqlite3')
 _DEST_FILE = os.path.join(_TEST_DIR, 'test_destinations.json')
 
+# Load .env first so TG_BOT_TOKEN and store vars are available.
+# Test-specific overrides below take precedence over .env values.
+from dotenv import load_dotenv
+load_dotenv()
+
 os.environ.update({
-    'TELEGRAM_DRY_RUN': '1',
-    'ORDER_STATE_DB': _DB_FILE,
-    'TG_DESTINATIONS_FILE': _DEST_FILE,
+    'TELEGRAM_DRY_RUN': '1',           # keep dry-run; no real API calls
+    'ORDER_STATE_DB': _DB_FILE,         # isolated temp DB
+    'TG_DESTINATIONS_FILE': _DEST_FILE, # isolated temp destinations
     'TARGET_ORDER_STATUSES': 'processing,wc-ready-to-ship',
     'STATE_RETENTION_DAYS': '30',
-    # TG_BOT_TOKEN is intentionally NOT overridden here so the real token from
-    # .env is loaded by telegram_notify.load_dotenv(). Dry-run mode still
-    # prevents any real API calls, but the token path is exercised.
 })
 
 # ---------------------------------------------------------------------------
