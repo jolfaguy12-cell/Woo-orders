@@ -30,8 +30,10 @@ os.environ.update({
     'ORDER_STATE_DB': _DB_FILE,
     'TG_DESTINATIONS_FILE': _DEST_FILE,
     'TARGET_ORDER_STATUSES': 'processing,wc-ready-to-ship',
-    'TG_BOT_TOKEN': '',          # empty; dry-run bypasses the token guard
     'STATE_RETENTION_DAYS': '30',
+    # TG_BOT_TOKEN is intentionally NOT overridden here so the real token from
+    # .env is loaded by telegram_notify.load_dotenv(). Dry-run mode still
+    # prevents any real API calls, but the token path is exercised.
 })
 
 # ---------------------------------------------------------------------------
