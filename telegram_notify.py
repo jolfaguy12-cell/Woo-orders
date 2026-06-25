@@ -28,7 +28,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 _log = logging.getLogger(__name__)
 
-ADMIN_CHAT_ID: int = 213946880  # only this user may manage destinations
+ADMIN_CHAT_ID: int = int(os.getenv('TG_ADMIN_ID', '213946880'))
 DESTINATIONS_FILE: str = os.getenv('TG_DESTINATIONS_FILE', 'telegram_destinations.json')
 _TOKEN: str = os.getenv('TG_BOT_TOKEN', '')
 
@@ -206,40 +206,44 @@ def _main_menu() -> dict:
     return {
         'inline_keyboard': [
             [
-                {'text': '➕ افزودن مقصد', 'callback_data': 'menu:help_add'},
-                {'text': '🗑 حذف مقصد', 'callback_data': 'menu:help_remove'},
+                {'text': '📋 مقصدها', 'callback_data': 'menu:list'},
+                {'text': '📊 وضعیت / تنظیمات', 'callback_data': 'menu:status'},
             ],
             [
-                {'text': '📋 لیست مقصدها', 'callback_data': 'menu:list'},
-                {'text': '📊 وضعیت', 'callback_data': 'menu:status'},
+                {'text': '➕ افزودن مقصد', 'callback_data': 'menu:help_add'},
+                {'text': '🗑 حذف مقصد', 'callback_data': 'menu:help_remove'},
             ],
         ]
     }
 
 
+def _back_kb() -> dict:
+    return {'inline_keyboard': [[{'text': '↩️ بازگشت به منو', 'callback_data': 'menu:back'}]]}
+
+
 def _cmd_list(chat_id: int):
     dests = load_destinations()
     if not dests:
-        _send_msg(chat_id, "هیچ مقصدی تنظیم نشده است.")
+        _send_msg(chat_id, "هیچ مقصدی تنظیم نشده است.", reply_markup=_back_kb())
         return
     lines = ["<b>مقصدهای فعال:</b>"]
     for d in dests:
         lines.append(f"• <b>{d['name']}</b> | {d['type']} | <code>{d['chat_id']}</code>")
-    _send_msg(chat_id, "\n".join(lines))
+    _send_msg(chat_id, "\n".join(lines), reply_markup=_back_kb())
 
 
 def _cmd_status(chat_id: int):
     dests = load_destinations()
-    target = os.getenv('TARGET_STATUSES', 'processing,wc-ready-to-ship')
+    target = os.getenv('TARGET_ORDER_STATUSES', 'processing,wc-ready-to-ship')
     bkeys = os.getenv('BASALAM_META_KEYS', '_order_source,source,channel,known_source,_basalam_order_id')
     _send_msg(chat_id, "\n".join([
         "<b>وضعیت پیکربندی</b>",
         f"مقصدها: {len(dests)} عدد",
         f"وضعیت‌های هدف: <code>{target}</code>",
         f"کلیدهای بصالام: <code>{bkeys}</code>",
-        f"پایگاه داده: <code>{os.getenv('STATE_DB_PATH', 'order_state.db')}</code>",
+        f"پایگاه داده: <code>{os.getenv('ORDER_STATE_DB', './data/order_state.sqlite3')}</code>",
         f"فایل مقصدها: <code>{DESTINATIONS_FILE}</code>",
-    ]))
+    ]), reply_markup=_back_kb())
 
 
 def _handle_command(msg: dict):
@@ -301,7 +305,9 @@ def _handle_callback(cb: dict):
         return
 
     data = cb.get('data', '')
-    if data == 'menu:list':
+    if data == 'menu:back':
+        _send_msg(chat_id, "<b>منوی مدیریت مقصدهای تلگرام</b>", reply_markup=_main_menu())
+    elif data == 'menu:list':
         _cmd_list(chat_id)
     elif data == 'menu:status':
         _cmd_status(chat_id)
@@ -310,13 +316,15 @@ def _handle_callback(cb: dict):
             "برای افزودن مقصد:\n"
             "<code>/add &lt;chat_id&gt; &lt;name&gt; &lt;type&gt;</code>\n\n"
             "مثال:\n<code>/add -1001234567890 گروه مدیران group</code>\n\n"
-            "نوع (type): user | group | channel"
+            "نوع (type): user | group | channel",
+            reply_markup=_back_kb()
         )
     elif data == 'menu:help_remove':
         _send_msg(chat_id,
             "برای حذف مقصد:\n"
             "<code>/remove &lt;chat_id&gt;</code>\n\n"
-            "مثال:\n<code>/remove -1001234567890</code>"
+            "مثال:\n<code>/remove -1001234567890</code>",
+            reply_markup=_back_kb()
         )
 
 

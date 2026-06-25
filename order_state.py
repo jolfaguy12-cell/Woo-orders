@@ -12,7 +12,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 
-DB_PATH = os.getenv('STATE_DB_PATH', 'order_state.db')
+DB_PATH = os.getenv('ORDER_STATE_DB', './data/order_state.sqlite3')
 STATE_RETENTION_DAYS = int(os.getenv('STATE_RETENTION_DAYS', '30'))
 
 
@@ -24,6 +24,9 @@ def _connect() -> sqlite3.Connection:
 
 def init_db():
     """Create tables if they don't exist. Safe to call on every run."""
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     with _connect() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS order_state (

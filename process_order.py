@@ -21,9 +21,9 @@ from order_state import cleanup_old_records, get_order_state, init_db, set_order
 from pdf_generator import generate_pdf
 from telegram_notify import send_order_notification
 
-TARGET_STATUSES: list[str] = [
+TARGET_ORDER_STATUSES: list[str] = [
     s.strip()
-    for s in os.getenv('TARGET_STATUSES', 'processing,wc-ready-to-ship').split(',')
+    for s in os.getenv('TARGET_ORDER_STATUSES', 'processing,wc-ready-to-ship').split(',')
     if s.strip()
 ]
 
@@ -32,7 +32,7 @@ def process_order(order: dict) -> dict:
     """
     Process a single WooCommerce order dict:
       1. Check Basalam origin.
-      2. Check status against TARGET_STATUSES.
+      2. Check status against TARGET_ORDER_STATUSES.
       3. Generate PDF invoice + packing slip.
       4. Send/update Telegram notification.
       5. Persist state for future updates.
@@ -59,7 +59,7 @@ def process_order(order: dict) -> dict:
         print(f"Order {order_id}: not a Basalam order — skipping.")
         return result
 
-    if status not in TARGET_STATUSES:
+    if status not in TARGET_ORDER_STATUSES:
         result['skipped_reason'] = f'status_not_targeted ({status!r})'
         print(f"Order {order_id}: status {status!r} not in target list — skipping.")
         return result

@@ -16,8 +16,10 @@ output/
 backup_pdfs/
 *.zip
 
-# Runtime state (sensitive — contains destination chat IDs and message IDs)
-order_state.db
+# Runtime state and config (sensitive)
+data/
+*.db
+*.sqlite3
 telegram_destinations.json
 
 # WordPress data hub order cache (not committed)
