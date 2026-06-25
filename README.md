@@ -160,6 +160,24 @@ See `hub_adapter.py` for integration notes. The hub is responsible for authentic
 
 > **Testing plan (future):** Verify the hub can deliver new orders in near real-time and status updates for orders within the last 30 days. This project's state DB (`ORDER_STATE_DB`) retains enough data to support that window.
 
+## Dry-run validation
+
+Validates the full order-processing flow locally — no Telegram messages sent, no font or WeasyPrint required.
+
+```bash
+python test_flow.py
+# or with detail on every check:
+python test_flow.py --verbose
+```
+
+Checks:
+1. Basalam order + `processing` → PDF generated (mocked), notification attempted, state + message_id stored.
+2. Same order + new target status → old message deleted first, new message_id stored.
+3. Basalam order + non-target status → silently skipped.
+4. Non-Basalam order + `processing` → silently skipped.
+
+Set `TELEGRAM_DRY_RUN=1` in `.env` to also suppress real Telegram calls in production test runs.
+
 ## Limitations
 
 - No web server; must be invoked externally or via CLI.

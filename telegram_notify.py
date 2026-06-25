@@ -28,6 +28,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 _log = logging.getLogger(__name__)
 
+# Dry-run mode: set TELEGRAM_DRY_RUN=1 to skip real API calls (used in tests)
+_DRY_RUN: bool = bool(os.getenv('TELEGRAM_DRY_RUN'))
+_dry_run_deleted: list = []    # (chat_id, message_id) pairs recorded when dry-run deletes
+_dry_run_msg_counter: int = 0  # increments each dry-run send to produce unique fake IDs
+
 ADMIN_CHAT_ID: int = int(os.getenv('TG_ADMIN_ID', '213946880'))
 DESTINATIONS_FILE: str = os.getenv('TG_DESTINATIONS_FILE', 'telegram_destinations.json')
 _TOKEN: str = os.getenv('TG_BOT_TOKEN', '')
@@ -137,6 +142,12 @@ def _build_caption(order: dict) -> str:
 
 
 def _send_document(chat_id: str, caption: str, pdf_path: str) -> int | None:
+    if _DRY_RUN:
+        global _dry_run_msg_counter
+        _dry_run_msg_counter += 1
+        fake_id = 10000 + _dry_run_msg_counter
+        _log.info("DRY RUN: would send document to %s → fake message_id=%d", chat_id, fake_id)
+        return fake_id
     with open(pdf_path, 'rb') as f:
         result = _api(
             'sendDocument',
@@ -149,6 +160,10 @@ def _send_document(chat_id: str, caption: str, pdf_path: str) -> int | None:
 
 
 def _delete_message(chat_id: str, message_id: int):
+    if _DRY_RUN:
+        _dry_run_deleted.append((chat_id, message_id))
+        _log.info("DRY RUN: would delete message %s from %s", message_id, chat_id)
+        return
     result = _api('deleteMessage', json={'chat_id': chat_id, 'message_id': message_id})
     if not (result and result.get('ok')):
         _log.warning("Could not delete message %s in chat %s (may be >48h old)", message_id, chat_id)
@@ -162,7 +177,7 @@ def send_order_notification(order: dict, pdf_path: str):
       - Sends the new PDF with caption.
       - Stores the new message_id for future updates.
     """
-    if not _TOKEN:
+    if not _DRY_RUN and not _TOKEN:
         _log.warning("TG_BOT_TOKEN not set; skipping Telegram notification.")
         return
 
