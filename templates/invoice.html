@@ -2,14 +2,14 @@
     <div class="header-title">
         <h1>فاکتور فروش</h1>
         <div style="display: flex; align-items: center; gap: 10px;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://behdashtik.ir" alt="QR Code" style="width: 20mm; height: 20mm;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ store.url }}" alt="QR Code" style="width: 20mm; height: 20mm;">
             <div style="text-align: right;">
                 <div class="store-name">{{ store.name }}</div>
-                <div style="font-size: 10pt; color: #555; margin-top: 2px;">behdashtik.ir</div>
+                <div style="font-size: 10pt; color: #555; margin-top: 2px;">{{ store.url | replace('https://', '') | replace('http://', '') }}</div>
             </div>
         </div>
     </div>
-    
+
     <div class="meta-info">
         <div class="meta-col">
             <div><strong>تاریخ:</strong> {{ order.jalali_date }}</div>
@@ -19,9 +19,6 @@
         <div class="meta-col">
             <div><strong>شماره سفارش:</strong> {{ order.id }}</div>
             <div><strong>مشتری:</strong> {{ order.billing.first_name }} {{ order.billing.last_name }}</div>
-            {% if order.created_via == 'admin' %}
-            <div><strong>صادرکننده فاکتور:</strong> {{ order.admin_issuer }}</div>
-            {% endif %}
         </div>
     </div>
 
@@ -70,7 +67,7 @@
         <span>جمع کل:</span>
         <span>{{ order.total | currency }} تومان</span>
     </div>
-    
+
     <div class="notes-box">
         <div class="notes-title">توضیحات سفارش:</div>
         <div>{{ order.customer_note | default('ندارد', true) }}</div>

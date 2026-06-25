@@ -1,8 +1,33 @@
-node_modules/
-build/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
 dist/
-coverage/
+build/
+
+# Environment — keep only the example
+.env
+.env.*
+!.env.example
+
+# Generated output
+output/
+backup_pdfs/
+*.zip
+
+# Runtime state (sensitive — contains destination chat IDs and message IDs)
+order_state.db
+telegram_destinations.json
+
+# WordPress data hub order cache (not committed)
+wordpress-data-hub/cache/
+
+# Fonts (large binaries; add your own)
+fonts/
+
+# OS / editors
 .DS_Store
 *.log
-.env*
-!.env.example
+.idea/
+.vscode/
