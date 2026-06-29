@@ -21,14 +21,10 @@ from order_state import cleanup_old_records, get_order_state, init_db, set_order
 from pdf_generator import generate_pdf
 from telegram_notify import send_order_notification
 
-TARGET_ORDER_STATUSES: list[str] = [
-    s.strip()
-    for s in os.getenv(
-        'TARGET_ORDER_STATUSES',
-        'processing,ready-to-ship,bslm-preparation,bslm-shipping,bslm-wait-vendor,bslm-rejected,refunded',
-    ).split(',')
-    if s.strip()
-]
+_ENV_STATUSES_DEFAULT = (
+    'pending,processing,ready-to-ship,'
+    'bslm-preparation,bslm-shipping,bslm-wait-vendor,bslm-rejected,refunded'
+)
 
 
 def _read_settings() -> dict:
@@ -41,6 +37,18 @@ def _read_settings() -> dict:
         return {}
 
 
+def _get_target_statuses() -> list[str]:
+    """Return the current target status list.
+
+    Priority: dashboard settings.json > TARGET_ORDER_STATUSES env var > built-in default.
+    Reading from settings.json on every call means dashboard changes take effect
+    immediately without restarting webhook_server.py.
+    """
+    cfg_val = _read_settings().get('target_order_statuses', '')
+    raw = cfg_val or os.getenv('TARGET_ORDER_STATUSES', _ENV_STATUSES_DEFAULT)
+    return [s.strip() for s in raw.split(',') if s.strip()]
+
+
 def _should_send_pdf() -> bool:
     return bool(_read_settings().get('send_pdf_with_new_order', True))
 
@@ -50,12 +58,7 @@ def _is_basalam_only() -> bool:
 
 
 def _normalize_status(status: str) -> str:
-    """Strip the leading 'wc-' prefix that WordPress adds to custom status slugs.
-
-    Hub normally does this before sending the webhook payload, but if a raw
-    WooCommerce status arrives (e.g. 'wc-bslm-preparation') this ensures the
-    comparison against TARGET_ORDER_STATUSES still works.
-    """
+    """Strip the leading 'wc-' prefix that WordPress adds to custom status slugs."""
     return status[3:] if status.startswith('wc-') else status
 
 
@@ -63,8 +66,8 @@ def process_order(order: dict) -> dict:
     """
     Process a single WooCommerce order dict:
       1. Check Basalam origin.
-      2. Check status against TARGET_ORDER_STATUSES.
-      3. Generate PDF invoice + packing slip.
+      2. Check status against target statuses (read live from settings.json).
+      3. Generate PDF invoice.
       4. Send/update Telegram notification.
       5. Persist state for future updates.
 
@@ -91,7 +94,8 @@ def process_order(order: dict) -> dict:
         print(f"Order {order_id}: basalam_only=true — skipping non-Basalam order.")
         return result
 
-    if status_key not in TARGET_ORDER_STATUSES:
+    target_statuses = _get_target_statuses()
+    if status_key not in target_statuses:
         result['skipped_reason'] = f'status_not_targeted ({status!r})'
         print(f"Order {order_id}: status {status!r} not in target list — skipping.")
         return result
