@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}هشدار موجودی{% endblock %}
+{% block page_title %}هشدارهای موجودی{% endblock %}
+{% block breadcrumb %}تنظیمات اعلان موجودی کم و اتمام موجودی{% endblock %}
+
+{% block content %}
+{% if success %}
+  <div class="alert alert-success mb-4" data-auto-dismiss>✓ {{ success }}</div>
+{% endif %}
+{% if error %}
+  <div class="alert alert-danger mb-4" data-auto-dismiss>✗ {{ error }}</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="two-col">
+
+  <form method="POST" action="{{ url_for('dashboard.stock') }}">
+    <!-- Low Stock Alert -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(245,158,11,.1);">⚠️</div>
+        <h2>هشدار موجودی کم</h2>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #f1f5f9;">
+          <div>
+            <div style="font-size:13px;font-weight:600;">فعال‌سازی هشدار موجودی کم</div>
+            <div class="form-hint">اعلان تلگرام هنگامی که موجودی محصول کم می‌شود</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" name="low_stock_enabled" value="1"
+              {% if cfg.stock_alerts.low_stock_enabled %}checked{% endif %}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label">آستانه موجودی کم</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input
+              class="form-control"
+              type="number"
+              name="threshold"
+              value="{{ threshold }}"
+              min="1"
+              max="1000"
+              style="max-width:120px;"
+            >
+            <span style="font-size:13px;color:#64748b;">عدد</span>
+          </div>
+          <div class="form-hint">
+            اگر موجودی محصولی به این عدد یا کمتر برسد، هشدار ارسال می‌شود.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Out of Stock Alert -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(239,68,68,.1);">🚫</div>
+        <h2>هشدار اتمام موجودی</h2>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:13px;font-weight:600;">فعال‌سازی هشدار اتمام موجودی</div>
+            <div class="form-hint">اعلان تلگرام هنگامی که محصولی تمام می‌شود</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" name="out_of_stock_enabled" value="1"
+              {% if cfg.stock_alerts.out_of_stock_enabled %}checked{% endif %}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">💾 ذخیره تنظیمات موجودی</button>
+  </form>
+
+  <!-- Out-of-stock preview -->
+  <div>
+    <div class="card">
+      <div class="card-header" style="justify-content:space-between;">
+        <div class="d-flex align-items-center gap-3">
+          <div class="card-icon" style="background:rgba(239,68,68,.1);">📋</div>
+          <h2>محصولات ناموجود (از هاب)</h2>
+        </div>
+        <a href="{{ url_for('dashboard.orders') }}" class="btn btn-outline btn-sm">مشاهده سفارشات</a>
+      </div>
+      <div class="card-body" style="padding:0;">
+        {% if low_stock_products %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>نام محصول</th>
+              <th>SKU</th>
+              <th>موجودی</th>
+              <th>وضعیت</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in low_stock_products %}
+            <tr>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                <span title="{{ p.name }}">{{ p.name }}</span>
+              </td>
+              <td><code style="font-size:11px;">{{ p.sku or '—' }}</code></td>
+              <td>
+                <strong style="color:{% if p.stock_quantity == 0 %}var(--danger){% elif p.stock_quantity and p.stock_quantity <= threshold %}var(--warning){% else %}var(--success){% endif %};">
+                  {{ p.stock_quantity if p.stock_quantity is not none else '—' }}
+                </strong>
+              </td>
+              <td>
+                <span class="badge badge-{{ 'red' if p.stock_status == 'outofstock' else 'orange' if p.stock_status == 'onbackorder' else 'green' }}">
+                  {{ 'ناموجود' if p.stock_status == 'outofstock' else 'پیش‌سفارش' if p.stock_status == 'onbackorder' else 'موجود' }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          {% if not config %}
+          <div class="empty-icon">✅</div>
+          <h3>همه محصولات موجود هستند</h3>
+          <p>یا هاب در دسترس نیست.</p>
+          {% else %}
+          <div class="empty-icon">📡</div>
+          <h3>داده‌ای از هاب دریافت نشد</h3>
+          <p>هاب در دسترس نیست یا محصول ناموجودی وجود ندارد.</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Template preview -->
+    <div class="card mt-4">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(99,102,241,.1);">👁</div>
+        <h2>پیش‌نمایش الگوی هشدار</h2>
+      </div>
+      <div class="card-body">
+        <div style="background:#0f172a;color:#94a3b8;font-family:monospace;font-size:12px;padding:14px;border-radius:8px;white-space:pre-line;direction:rtl;">{{ cfg.templates.low_stock }}</div>
+        <div style="margin-top:10px;">
+          <a href="{{ url_for('dashboard.templates_page') }}" class="btn btn-outline btn-sm">✏️ ویرایش الگو</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+@media (max-width: 768px) {
+  .two-col { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}

@@ -33,3 +33,6 @@ fonts/
 *.log
 .idea/
 .vscode/
+
+# Pip install artifacts (e.g. =3.0.0 from malformed install command)
+=*

@@ -105,14 +105,40 @@ def _fmt(value) -> str:
         return str(value)
 
 
+_STATUS_LABELS: dict[str, str] = {
+    "processing":        "در حال پردازش",
+    "pending":           "در انتظار پرداخت",
+    "completed":         "تکمیل‌شده",
+    "cancelled":         "لغو شده",
+    "refunded":          "مسترد شده",
+    "failed":            "ناموفق",
+    "on-hold":           "در انتظار",
+    "ready-to-ship":     "آماده ارسال",
+    # Basalam-specific statuses — stored with wc- prefix in DB, stripped by Hub.
+    # Both forms accepted so the app is robust to either format arriving.
+    "bslm-preparation":     "باسلام — آماده‌سازی سفارش",
+    "wc-bslm-preparation":  "باسلام — آماده‌سازی سفارش",
+    "bslm-shipping":        "باسلام — سفارش برای مشتری",
+    "wc-bslm-shipping":     "باسلام — سفارش برای مشتری",
+    "bslm-completed":       "باسلام — تکمیل‌شده",
+    "wc-bslm-completed":    "باسلام — تکمیل‌شده",
+    "bslm-rejected":        "باسلام — لغو شده",
+    "wc-bslm-rejected":     "باسلام — لغو شده",
+    "bslm-wait-vendor":     "باسلام — انتظار فروشنده",
+    "wc-bslm-wait-vendor":  "باسلام — انتظار فروشنده",
+}
+
+
 def _build_caption(order: dict) -> str:
     order_id = order.get('id', '?')
-    status = order.get('status', '?')
+    status_raw = order.get('status', '?')
+    status_label = _STATUS_LABELS.get(status_raw, status_raw)
     billing = order.get('billing', {})
     customer = f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip() or '?'
     phone = billing.get('phone', '')
     total = _fmt(order.get('total', '0'))
     payment = order.get('payment_method_title', 'نامشخص')
+    is_basalam = bool(order.get('basalam'))
 
     shipping = order.get('shipping', {})
     has_shipping = bool(shipping.get('first_name') or shipping.get('address_1'))
@@ -129,9 +155,12 @@ def _build_caption(order: dict) -> str:
         for i in order.get('line_items', [])
     ) or "  —"
 
-    return (
+    source_badge = "🛍 باسلام\n" if is_basalam else ""
+
+    caption = (
         f"📦 سفارش #{order_id}\n"
-        f"📌 وضعیت: {status}\n"
+        f"{source_badge}"
+        f"📌 وضعیت: {status_label}\n"
         f"👤 مشتری: {customer}" + (f" | 📞 {phone}" if phone else "") + "\n"
         f"💳 پرداخت: {payment}\n"
         f"💰 مبلغ کل: {total} تومان\n"
@@ -140,20 +169,50 @@ def _build_caption(order: dict) -> str:
         f"\n🛒 محصولات:\n{items}"
     )
 
+    # Append Basalam financial breakdown (commission, payable amount, customer stats)
+    if is_basalam:
+        bs = order['basalam']
+        fee    = _fmt(bs.get('fee_amount', '0'))
+        net    = _fmt(bs.get('balance_amount', '0'))
+        pcount = bs.get('purchase_count', 0)
+        caption += (
+            f"\n\n📊 اطلاعات باسلام:\n"
+            f"  کارمزد: {fee} تومان\n"
+            f"  مبلغ قابل دریافت: {net} تومان\n"
+            f"  تعداد خرید مشتری: {pcount}"
+        )
 
-def _send_document(chat_id: str, caption: str, pdf_path: str) -> int | None:
+    return caption
+
+
+def _send_text(chat_id: str, text: str, parse_mode: str = None) -> int | None:
+    if _DRY_RUN:
+        global _dry_run_msg_counter
+        _dry_run_msg_counter += 1
+        fake_id = 10000 + _dry_run_msg_counter
+        _log.info("DRY RUN: would send text to %s → fake message_id=%d", chat_id, fake_id)
+        return fake_id
+    payload: dict = {'chat_id': chat_id, 'text': text}
+    if parse_mode:
+        payload['parse_mode'] = parse_mode
+    result = _api('sendMessage', json=payload)
+    if result and result.get('ok'):
+        return result['result']['message_id']
+    return None
+
+
+def _send_document(chat_id: str, caption: str, pdf_path: str, parse_mode: str = None) -> int | None:
     if _DRY_RUN:
         global _dry_run_msg_counter
         _dry_run_msg_counter += 1
         fake_id = 10000 + _dry_run_msg_counter
         _log.info("DRY RUN: would send document to %s → fake message_id=%d", chat_id, fake_id)
         return fake_id
+    data: dict = {'chat_id': chat_id, 'caption': caption[:1024]}
+    if parse_mode:
+        data['parse_mode'] = parse_mode
     with open(pdf_path, 'rb') as f:
-        result = _api(
-            'sendDocument',
-            data={'chat_id': chat_id, 'caption': caption},
-            files={'document': f},
-        )
+        result = _api('sendDocument', data=data, files={'document': f})
     if result and result.get('ok'):
         return result['result']['message_id']
     return None
@@ -169,13 +228,25 @@ def _delete_message(chat_id: str, message_id: int):
         _log.warning("Could not delete message %s in chat %s (may be >48h old)", message_id, chat_id)
 
 
-def send_order_notification(order: dict, pdf_path: str):
+def delete_order_messages(order_id: str) -> int:
+    """Delete all previously sent Telegram messages for an order. Returns count deleted."""
+    from order_state import get_message_id
+    destinations = load_destinations()
+    count = 0
+    for dest in destinations:
+        chat_id = str(dest['chat_id'])
+        msg_id  = get_message_id(str(order_id), chat_id)
+        if msg_id:
+            _delete_message(chat_id, msg_id)
+            count += 1
+    return count
+
+
+def send_order_notification(order: dict, pdf_path: str | None):
     """
     Send (or update) Telegram notifications for an order.
-    For each destination:
-      - Deletes the previous bot message if one was stored.
-      - Sends the new PDF with caption.
-      - Stores the new message_id for future updates.
+    Uses the dashboard 'new_order'/'basalam_order' template from settings.json.
+    Recipients: notification destinations + manager IDs from the whitelist.
     """
     if not _DRY_RUN and not _TOKEN:
         _log.warning("TG_BOT_TOKEN not set; skipping Telegram notification.")
@@ -183,27 +254,46 @@ def send_order_notification(order: dict, pdf_path: str):
 
     from order_state import get_message_id, set_message_id
 
-    destinations = load_destinations()
-    if not destinations:
-        _log.warning("No Telegram destinations configured. Run 'python telegram_notify.py bot' to add some.")
-        return
-
-    caption = _build_caption(order)
+    text = _render_order_message(order)
     order_id = str(order.get('id', ''))
 
+    # --- notification destinations (with message-ID tracking for updates) ---
+    destinations = load_destinations()
+    dest_chat_ids: set[str] = set()
     for dest in destinations:
         chat_id = str(dest['chat_id'])
-
+        dest_chat_ids.add(chat_id)
         prev_id = get_message_id(order_id, chat_id)
         if prev_id:
             _delete_message(chat_id, prev_id)
-
-        msg_id = _send_document(chat_id, caption, pdf_path)
+        if pdf_path:
+            msg_id = _send_document(chat_id, text, pdf_path)
+        else:
+            msg_id = _send_text(chat_id, text)
         if msg_id:
             set_message_id(order_id, chat_id, msg_id)
             _log.info("Notified %s (%s) for order %s", dest['name'], chat_id, order_id)
         else:
             _log.error("Failed to notify %s (%s) for order %s", dest['name'], chat_id, order_id)
+
+    if not destinations:
+        _log.info("No notification destinations configured for order %s.", order_id)
+
+    # --- manager IDs from dashboard whitelist (no message-ID tracking) ---
+    try:
+        cfg = _load_settings_json()
+        manager_ids = [int(x) for x in cfg.get('telegram_manager_ids', []) if str(x).strip()]
+    except Exception:
+        manager_ids = []
+
+    for mgr_id in manager_ids:
+        if str(mgr_id) in dest_chat_ids:
+            continue  # already sent via destinations list
+        if pdf_path:
+            _send_document(str(mgr_id), text, pdf_path)
+        else:
+            _send_text(str(mgr_id), text)
+        _log.info("Notified manager %s for order %s", mgr_id, order_id)
 
 
 # ---------------------------------------------------------------------------
@@ -249,25 +339,222 @@ def _cmd_list(chat_id: int):
 
 def _cmd_status(chat_id: int):
     dests = load_destinations()
-    target = os.getenv('TARGET_ORDER_STATUSES', 'processing,wc-ready-to-ship')
-    bkeys = os.getenv('BASALAM_META_KEYS', '_order_source,source,channel,known_source,_basalam_order_id')
+    target = os.getenv('TARGET_ORDER_STATUSES', 'processing,ready-to-ship,bslm-preparation,bslm-shipping,bslm-wait-vendor,bslm-rejected')
     _send_msg(chat_id, "\n".join([
         "<b>وضعیت پیکربندی</b>",
         f"مقصدها: {len(dests)} عدد",
         f"وضعیت‌های هدف: <code>{target}</code>",
-        f"کلیدهای بصالام: <code>{bkeys}</code>",
         f"پایگاه داده: <code>{os.getenv('ORDER_STATE_DB', './data/order_state.sqlite3')}</code>",
         f"فایل مقصدها: <code>{DESTINATIONS_FILE}</code>",
     ]), reply_markup=_back_kb())
 
 
+def _normalize_query(text: str) -> str:
+    """Normalize Persian/Arabic-Indic digits to ASCII before sending to Hub search."""
+    _PER = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+    _ARA = str.maketrans('٠١٢٣٤٥٦٧٨٩', '0123456789')
+    return text.translate(_PER).translate(_ARA).strip()
+
+
+def _load_settings_json() -> dict:
+    """Read dashboard/data/settings.json directly. Returns {} on failure."""
+    try:
+        f = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'dashboard', 'data', 'settings.json')
+        with open(f, 'r', encoding='utf-8') as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+class _FallbackDict(dict):
+    """dict that returns '' for missing keys (safe format_map)."""
+    def __missing__(self, key):
+        return ''
+
+
+def _render_order_message(order: dict) -> str:
+    """Render new-order notification from dashboard template. Falls back to _build_caption()."""
+    try:
+        cfg = _load_settings_json()
+        is_basalam = bool(order.get('basalam'))
+        tpl_key = 'basalam_order' if is_basalam else 'new_order'
+        tpl = (cfg.get('templates') or {}).get(tpl_key, '')
+        if not tpl:
+            return _build_caption(order)
+
+        status_raw = order.get('status', '')
+        billing = order.get('billing', {})
+        customer_name = (
+            f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip() or '—'
+        )
+
+        # Jalali date with ASCII fallback
+        try:
+            import jdatetime as _jd
+            from datetime import datetime as _dtc
+            _d = _dtc.strptime((order.get('date_created') or '')[:10], '%Y-%m-%d')
+            order_date = _jd.date.fromgregorian(date=_d.date()).strftime('%Y/%m/%d')
+        except Exception:
+            order_date = (order.get('date_created') or '')[:10] or '—'
+
+        items_list = '\n'.join(
+            f"  ▪ {i.get('name', '—')} × {i.get('quantity', 1)}"
+            for i in order.get('line_items', [])
+        ) or '  —'
+
+        vars_: dict = _FallbackDict({
+            'order_id':       order.get('id', '?'),
+            'status':         status_raw,
+            'status_label':   _STATUS_LABELS.get(status_raw, status_raw),
+            'customer_name':  customer_name,
+            'phone':          billing.get('phone', '') or '—',
+            'email':          billing.get('email', '') or '—',
+            'total':          _fmt(order.get('total', '0')),
+            'payment_method': order.get('payment_method_title', 'نامشخص'),
+            'order_date':     order_date,
+            'items_list':     items_list,
+        })
+        if is_basalam:
+            bs = order.get('basalam', {})
+            vars_['basalam_fee'] = _fmt(bs.get('fee_amount', '0'))
+            vars_['basalam_net'] = _fmt(bs.get('balance_amount', '0'))
+            vars_['basalam_purchase_count'] = str(bs.get('purchase_count', 0))
+
+        return tpl.format_map(vars_)
+    except Exception:
+        return _build_caption(order)
+
+
+def _send_invoice_for_admin(chat_id: int, order: dict, order_id: int, caption: str = '') -> bool:
+    """Send PDF invoice to admin with optional caption (Telegram caption limit: 1024 chars).
+    Returns True if the PDF was sent, False if unavailable (caller should fall back to text)."""
+    import glob as _glob
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    output_root = os.path.join(project_root, 'output')
+
+    matches = _glob.glob(os.path.join(output_root, '**', f'*_{order_id}.pdf'), recursive=True)
+    if matches:
+        pdf_path = max(matches, key=os.path.getmtime)
+    else:
+        try:
+            from pdf_generator import generate_pdf as _gen_pdf
+            pdf_path = _gen_pdf(order)
+        except Exception as exc:
+            _log.warning("PDF generation for order %s failed: %s", order_id, exc)
+            return False
+
+    if _DRY_RUN:
+        _log.info("DRY RUN: would send invoice PDF %s to admin %s", pdf_path, chat_id)
+        return True
+    try:
+        with open(pdf_path, 'rb') as f:
+            data: dict = {'chat_id': str(chat_id)}
+            if caption:
+                data['caption'] = caption[:1024]
+                data['parse_mode'] = 'HTML'
+            _api('sendDocument',
+                 data=data,
+                 files={'document': (f'invoice_{order_id}.pdf', f, 'application/pdf')})
+        return True
+    except Exception as exc:
+        _log.warning("Could not send invoice PDF for order %s: %s", order_id, exc)
+        return False
+
+
+def _is_authorized(chat_id: int) -> bool:
+    """Return True if chat_id is the bot admin, in the dashboard manager whitelist,
+    or is a user-type destination registered via /add."""
+    if chat_id == ADMIN_CHAT_ID:
+        return True
+    try:
+        cfg = _load_settings_json()
+        ids = [int(x) for x in cfg.get('telegram_manager_ids', []) if str(x).strip()]
+        if chat_id in ids:
+            return True
+    except Exception:
+        pass
+    # Also allow anyone registered as an individual user destination via /add
+    try:
+        for d in load_destinations():
+            if d.get('type') in ('user', 'private') and int(d['chat_id']) == chat_id:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _handle_admin_search(chat_id: int, text: str):
+    """Search orders and reply with PDF invoice first, then order summary + tracking."""
+    query = _normalize_query(text.lstrip('#'))
+    if not query:
+        return
+
+    try:
+        _dash = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard')
+        if _dash not in sys.path:
+            sys.path.insert(0, _dash)
+        import settings_manager as _sm_mod
+        import hub_client as _hc
+
+        cfg = _sm_mod.load()
+        hub_url = cfg.get('hub_url', 'http://127.0.0.1:8090')
+        hub_key = cfg.get('hub_api_key', '')
+
+        result = _hc.list_orders(hub_url, hub_key, search=query, per_page=3)
+        if not result or result.get('error') or not result.get('data'):
+            _send_msg(chat_id, "سفارشی یافت نشد.")
+            return
+
+        orders = result['data']
+        total = result.get('pagination', {}).get('total', len(orders))
+
+        if total > 3:
+            _send_msg(chat_id, f"🔍 <b>{total} نتیجه برای «{query}» — ۳ مورد اخیر:</b>")
+
+        for order in orders[:3]:
+            oid = order.get('id')
+            full = _hc.get_order_detail(hub_url, hub_key, oid)
+            if not full:
+                continue
+
+            tracking = _hc.extract_tracking(full)
+            billing = full.get('billing') or {}
+            customer = f"{billing.get('first_name') or ''} {billing.get('last_name') or ''}".strip() or '—'
+            phone = billing.get('phone') or '—'
+            status_label = _STATUS_LABELS.get(full.get('status', ''), full.get('status', ''))
+            amount = _fmt(full.get('total', 0))
+
+            tcode = tracking.get('tracking_code')
+            tracking_line = (f"📮 رهگیری: <code>{tcode}</code>"
+                             if tcode else f"📦 {tracking.get('message', 'در حال پردازش')}")
+
+            # One combined message: PDF with caption (or text-only if no PDF available)
+            caption = (
+                f"<b>سفارش #{oid}</b>\n"
+                f"وضعیت: {status_label}\n"
+                f"مشتری: {customer} | {phone}\n"
+                f"مبلغ: {amount} تومان\n"
+                f"{tracking_line}"
+            )[:1024]
+
+            sent_pdf = _send_invoice_for_admin(chat_id, full, oid, caption=caption)
+            if not sent_pdf:
+                _send_msg(chat_id, caption)
+
+    except Exception as exc:
+        _log.error("admin_search error: %s", exc, exc_info=True)
+        _send_msg(chat_id, f"⚠️ خطا در جستجو: {exc}")
+
+
 def _handle_command(msg: dict):
     chat_id: int = msg['chat']['id']
-    if chat_id != ADMIN_CHAT_ID:
+    if not _is_authorized(chat_id):
         _send_msg(chat_id, "⛔ دسترسی غیرمجاز.")
         return
 
-    parts = msg.get('text', '').strip().split(maxsplit=3)
+    text_raw = msg.get('text', '').strip()
+    parts = text_raw.split(maxsplit=3)
     cmd = parts[0].lstrip('/').lower()
 
     if cmd in ('start', 'menu'):
@@ -301,22 +588,27 @@ def _handle_command(msg: dict):
     elif cmd == 'status':
         _cmd_status(chat_id)
 
-    else:
+    elif text_raw.startswith('/'):
         _send_msg(chat_id,
             "دستورات موجود:\n"
             "/menu — منوی اصلی\n"
             "/add &lt;chat_id&gt; &lt;name&gt; &lt;type&gt; — افزودن مقصد\n"
             "/remove &lt;chat_id&gt; — حذف مقصد\n"
             "/list — لیست مقصدها\n"
-            "/status — وضعیت کلی"
+            "/status — وضعیت کلی\n\n"
+            "یا شماره سفارش، موبایل، یا نام مشتری را مستقیم ارسال کنید."
         )
+
+    else:
+        # Plain text from admin: treat as order search
+        _handle_admin_search(chat_id, text_raw)
 
 
 def _handle_callback(cb: dict):
     chat_id: int = cb['from']['id']
     _api('answerCallbackQuery', json={'callback_query_id': cb['id']})
 
-    if chat_id != ADMIN_CHAT_ID:
+    if not _is_authorized(chat_id):
         return
 
     data = cb.get('data', '')
@@ -343,6 +635,43 @@ def _handle_callback(cb: dict):
         )
 
 
+def start_bot_polling():
+    """Start the bot long-polling loop in a background daemon thread.
+
+    Called from run_dashboard.py so the bot runs inside the dashboard process.
+    """
+    import threading
+
+    def _runner():
+        try:
+            run_bot()
+        except Exception as exc:
+            _log.error("Bot polling thread exited unexpectedly: %s", exc)
+
+    t = threading.Thread(target=_runner, name='tg-bot-poll', daemon=True)
+    t.start()
+    _log.info("Telegram bot polling thread started (admin=%s).", ADMIN_CHAT_ID)
+    return t
+
+
+def _drain_pending_updates() -> int:
+    """Discard any updates queued before this session. Returns starting offset."""
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{_TOKEN}/getUpdates",
+            params={'timeout': 0},
+            timeout=10,
+        )
+        data = r.json()
+        if data.get('ok') and data.get('result'):
+            latest = data['result'][-1]['update_id']
+            _log.info("Drained %d pending update(s) on startup.", len(data['result']))
+            return latest + 1
+    except Exception as exc:
+        _log.warning("Could not drain pending updates: %s", exc)
+    return None
+
+
 def run_bot():
     """Long-polling bot loop for admin destination management."""
     if not _TOKEN:
@@ -350,15 +679,25 @@ def run_bot():
         sys.exit(1)
 
     print(f"Bot started. Listening for admin (ID: {ADMIN_CHAT_ID})...")
-    offset: int | None = None
+    # Discard messages queued before this session to avoid replay loops
+    offset: int | None = _drain_pending_updates()
 
     while True:
         try:
-            params: dict = {'timeout': 30, 'allowed_updates': ['message', 'callback_query']}
+            params: dict = {
+                'timeout': 30,
+                'allowed_updates': ['message', 'callback_query'],
+            }
             if offset is not None:
                 params['offset'] = offset
 
-            result = _api('getUpdates', json=params)
+            # HTTP timeout must exceed Telegram's long-poll timeout
+            r = requests.get(
+                f"https://api.telegram.org/bot{_TOKEN}/getUpdates",
+                params=params,
+                timeout=40,
+            )
+            result = r.json() if r.ok else None
             if not result or not result.get('ok'):
                 time.sleep(5)
                 continue

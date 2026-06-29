@@ -1,41 +1,29 @@
-import os
+"""
+Basalam order detection.
 
-_BASALAM_META_KEYS = set(
-    os.getenv(
-        'BASALAM_META_KEYS',
-        '_order_source,source,channel,known_source,_basalam_order_id'
-    ).split(',')
-)
-_KEYWORDS = {'basalam'}
+A Basalam order is a normal WooCommerce order synced from Basalam marketplace.
+Detection uses concrete WooCommerce/Hub fields, not keyword heuristics.
+
+Priority (highest to lowest):
+  1. order_source == 'basalam'   — Hub computes this from _sync_basalam_hash_id
+  2. _sync_basalam_hash_id key in meta_data  — present on every Basalam order
+  3. payment_method starts with 'basalam'    — fallback for raw WC payloads
+"""
 
 
 def is_basalam_order(order: dict) -> bool:
-    """
-    Return True if the order originates from Basalam.
-
-    Detection strategy (checked in order):
-      1. `created_via` field contains a basalam keyword.
-      2. Any meta key name itself contains a basalam keyword.
-      3. A meta key matching BASALAM_META_KEYS has a value containing a keyword.
-      4. Any meta value contains a basalam keyword (catch-all for unknown field names).
-
-    Adjust BASALAM_META_KEYS env var to add/remove watched key names.
-    """
-    created_via = order.get('created_via', '').lower()
-    if any(kw in created_via for kw in _KEYWORDS):
+    # Hub webhook payload: order_source field
+    if order.get('order_source') == 'basalam':
         return True
 
-    for meta in order.get('meta_data', []):
-        key = str(meta.get('key', '')).lower().strip()
-        value = str(meta.get('value', '')).lower().strip()
-
-        if any(kw in key for kw in _KEYWORDS):
+    # meta_data array (WC REST API format or Hub webhook with meta_data included)
+    for item in order.get('meta_data', []):
+        if str(item.get('key', '')) == '_sync_basalam_hash_id' and item.get('value'):
             return True
 
-        if key in _BASALAM_META_KEYS and any(kw in value for kw in _KEYWORDS):
-            return True
-
-        if any(kw in value for kw in _KEYWORDS):
-            return True
+    # Basalam payment method (distinctive across all Basalam orders)
+    pm = str(order.get('payment_method') or '').lower()
+    if pm.startswith('basalam'):
+        return True
 
     return False

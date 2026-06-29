@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}الگوهای پیام{% endblock %}
+{% block page_title %}الگوهای پیام تلگرام{% endblock %}
+{% block breadcrumb %}ویرایش قالب‌های اعلان سفارش و موجودی{% endblock %}
+
+{% block content %}
+{% if success %}
+  <div class="alert alert-success mb-4" data-auto-dismiss>✓ {{ success }}</div>
+{% endif %}
+
+<!-- Shortcode Reference -->
+<div class="card mb-6">
+  <div class="card-header">
+    <div class="card-icon" style="background:rgba(99,102,241,.1);">💡</div>
+    <h2>متغیرهای قابل استفاده در الگوها</h2>
+  </div>
+  <div class="card-body">
+    <div style="font-size:12px;color:#64748b;margin-bottom:12px;">
+      روی هر متغیر کلیک کنید تا کپی شود. سپس آن را در الگوی مورد نظر جایگذاری کنید.
+    </div>
+    <div class="shortcode-list">
+      {% for code, desc in shortcodes %}
+      <div class="shortcode-chip">
+        <code>{{ code }}</code>
+        <span>{{ desc }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('dashboard.templates_page') }}">
+  <div style="display:grid;gap:20px;">
+
+    <!-- New/Updated Order -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(59,130,246,.1);">📦</div>
+        <h2>الگوی اعلان سفارش جدید/به‌روزشده</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-4">
+          <label class="form-label">متن پیام</label>
+          <textarea
+            class="form-control"
+            name="tpl_new_order"
+            rows="8"
+            style="font-family:monospace,Vazirmatn;font-size:12.5px;"
+            dir="auto"
+          >{{ cfg.templates.new_order }}</textarea>
+          <div class="form-hint">این الگو برای سفارشات جدید از سایت مستقیم استفاده می‌شود.</div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn btn-outline btn-sm tpl-test-btn"
+                    data-template="new_order" data-type="order">📨 ارسال آزمایشی</button>
+            <span class="tpl-test-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+
+        <!-- PDF Toggle -->
+        <div style="padding-top:16px;border-top:1px solid var(--border);">
+          <label class="form-label">پیوست PDF فاکتور</label>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:6px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;">
+              <input type="radio" name="send_pdf_with_new_order" value="1"
+                {{ 'checked' if send_pdf }}>
+              فعال — ارسال PDF با هر سفارش
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;">
+              <input type="radio" name="send_pdf_with_new_order" value="0"
+                {{ 'checked' if not send_pdf }}>
+              غیرفعال — فقط متن پیام
+            </label>
+          </div>
+          <div class="form-hint">
+            در صورت غیرفعال بودن، پیام به‌صورت متنی ارسال می‌شود و فاکتور PDF پیوست نمی‌شود.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Basalam Order -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(139,92,246,.1);">🛍</div>
+        <h2>الگوی سفارشات باسلام</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-4">
+          <label class="form-label">متن پیام</label>
+          <textarea
+            class="form-control"
+            name="tpl_basalam_order"
+            rows="10"
+            style="font-family:monospace,Vazirmatn;font-size:12.5px;"
+            dir="auto"
+          >{{ cfg.templates.basalam_order }}</textarea>
+          <div class="form-hint">
+            الگوی اختصاصی برای سفارشات ورودی از باسلام مارکت.
+            می‌توانید از متغیرهای اختصاصی باسلام مانند <code>{basalam_fee}</code> استفاده کنید.
+          </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn btn-outline btn-sm tpl-test-btn"
+                    data-template="basalam_order" data-type="order">📨 ارسال آزمایشی</button>
+            <span class="tpl-test-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Low Stock + Out of Stock -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="two-col">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon" style="background:rgba(245,158,11,.1);">⚠️</div>
+          <h2>هشدار موجودی کم</h2>
+        </div>
+        <div class="card-body">
+          <div class="mb-4">
+            <label class="form-label">متن پیام</label>
+            <textarea
+              class="form-control"
+              name="tpl_low_stock"
+              rows="7"
+              style="font-family:monospace,Vazirmatn;font-size:12.5px;"
+              dir="auto"
+            >{{ cfg.templates.low_stock }}</textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn btn-outline btn-sm tpl-test-btn"
+                    data-template="low_stock" data-type="stock">📨 ارسال آزمایشی</button>
+            <span class="tpl-test-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon" style="background:rgba(239,68,68,.1);">🚫</div>
+          <h2>اتمام موجودی</h2>
+        </div>
+        <div class="card-body">
+          <div class="mb-4">
+            <label class="form-label">متن پیام</label>
+            <textarea
+              class="form-control"
+              name="tpl_out_of_stock"
+              rows="7"
+              style="font-family:monospace,Vazirmatn;font-size:12.5px;"
+              dir="auto"
+            >{{ cfg.templates.out_of_stock }}</textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn btn-outline btn-sm tpl-test-btn"
+                    data-template="out_of_stock" data-type="stock">📨 ارسال آزمایشی</button>
+            <span class="tpl-test-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Report Template -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(99,102,241,.1);">📊</div>
+        <h2>قالب گزارش روزانه</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-4">
+          <label class="form-label">متن قالب</label>
+          <textarea
+            class="form-control"
+            name="tpl_daily_report"
+            rows="20"
+            style="font-family:monospace,Vazirmatn;font-size:12px;"
+            dir="ltr"
+          >{{ cfg.templates.daily_report }}</textarea>
+          <div class="form-hint" style="margin-top:8px;">
+            متغیرهای قابل استفاده:
+            <code>{date}</code>,
+            <code>{total_orders}</code>,
+            <code>{website_orders}</code>,
+            <code>{basalam_orders}</code>,
+            <code>{cancelled_orders}</code>,
+            <code>{free_ship_orders}</code>,
+            <code>{daily_sales}</code>,
+            <code>{sales_excl_shipping}</code>,
+            <code>{daily_sales_net}</code>,
+            <code>{total_shipping}</code>,
+            <code>{basalam_total_sales}</code>,
+            <code>{basalam_net_sales}</code>,
+            <code>{packages_shipped}</code>,
+            <code>{qom_orders}</code>,
+            <code>{non_qom_orders}</code>
+          </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnTestDailyReport">
+              📨 ارسال آزمایشی گزارش روزانه
+            </button>
+            <span id="dailyReportTestStatus" style="font-size:12px;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top:20px;display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;">
+    <button type="button" class="btn btn-outline" onclick="window.location.reload()">↺ بازگشت</button>
+    <button type="submit" class="btn btn-primary">💾 ذخیره همه الگوها</button>
+  </div>
+</form>
+
+<style>
+@media (max-width: 768px) {
+  .two-col { grid-template-columns: 1fr !important; }
+}
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+</style>
+
+<script>
+(function () {
+  var _SAMPLE_ORDER = {
+    order_id: '12345',
+    order_date: '۱۴۰۵/۰۴/۰۸',
+    status: 'processing',
+    status_label: 'در حال پردازش',
+    customer_name: 'علی احمدی',
+    phone: '09123456789',
+    email: 'example@behdashtik.ir',
+    total: '1,250,000',
+    payment_method: 'کارت بانکی (زیبال)',
+    shipping_method: 'پست پیشتاز',
+    address: 'تهران، خیابان آزادی، پلاک ۱۲',
+    items_list: '• کرم مرطوب‌کننده ویتامین C (x2)\n• سرم روشن‌کننده (x1)',
+    basalam_fee: '45,000',
+    basalam_net: '1,205,000',
+    basalam_purchase_count: '۳',
+  };
+
+  var _SAMPLE_STOCK = {
+    product_name: 'کرم روز مرطوب‌کننده',
+    product_id: '456',
+    sku: 'CRM-DAY-001',
+    stock_quantity: '3',
+    stock_status: 'موجودی کم',
+  };
+
+  function _applyVars(text, vars) {
+    return text.replace(/\{(\w+)\}/g, function (m, k) {
+      return vars.hasOwnProperty(k) ? vars[k] : m;
+    });
+  }
+
+  // Daily report test
+  var drBtn = document.getElementById('btnTestDailyReport');
+  var drStatus = document.getElementById('dailyReportTestStatus');
+  if (drBtn) {
+    drBtn.addEventListener('click', function () {
+      drBtn.disabled = true;
+      drStatus.style.color = '#64748b';
+      drStatus.textContent = 'در حال ارسال...';
+      fetch('{{ url_for("dashboard.api_daily_report_test") }}', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            drStatus.style.color = '#059669';
+            drStatus.textContent = 'ارسال شد — ' + d.sent + ' مقصد ✓';
+          } else {
+            drStatus.style.color = '#dc2626';
+            drStatus.textContent = 'خطا: ' + (d.error || 'نامشخص');
+          }
+        })
+        .catch(function () {
+          drStatus.style.color = '#dc2626';
+          drStatus.textContent = 'خطای شبکه';
+        })
+        .finally(function () {
+          drBtn.disabled = false;
+          setTimeout(function () { drStatus.textContent = ''; }, 6000);
+        });
+    });
+  }
+
+  document.querySelectorAll('.tpl-test-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var tplName = btn.dataset.template;
+      var type = btn.dataset.type;
+      var textarea = document.querySelector('[name="tpl_' + tplName + '"]');
+      var statusEl = btn.nextElementSibling;
+      if (!textarea) return;
+
+      var vars = (type === 'stock') ? _SAMPLE_STOCK : _SAMPLE_ORDER;
+      var text = _applyVars(textarea.value.trim(), vars);
+      if (!text) { statusEl.textContent = 'الگو خالی است.'; return; }
+
+      btn.disabled = true;
+      statusEl.style.color = '#64748b';
+      statusEl.textContent = 'در حال ارسال...';
+
+      fetch('{{ url_for("dashboard.telegram_test") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            statusEl.style.color = '#059669';
+            statusEl.textContent = 'ارسال شد ✓';
+          } else {
+            statusEl.style.color = '#dc2626';
+            statusEl.textContent = 'خطا: ' + (d.error || 'نامشخص');
+          }
+        })
+        .catch(function () {
+          statusEl.style.color = '#dc2626';
+          statusEl.textContent = 'خطای شبکه';
+        })
+        .finally(function () {
+          btn.disabled = false;
+          setTimeout(function () { statusEl.textContent = ''; }, 5000);
+        });
+    });
+  });
+})();
+</script>
+{% endblock %}

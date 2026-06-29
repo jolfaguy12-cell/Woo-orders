@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}تنظیمات تلگرام{% endblock %}
+{% block page_title %}تنظیمات تلگرام{% endblock %}
+{% block breadcrumb %}مدیریت بات و مقصدهای اعلان{% endblock %}
+
+{% block content %}
+{% if success %}
+  <div class="alert alert-success mb-4" data-auto-dismiss>✓ {{ success }}</div>
+{% endif %}
+{% if error %}
+  <div class="alert alert-danger mb-4" data-auto-dismiss>✗ {{ error }}</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="grid-responsive">
+
+  <!-- Bot Settings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(59,130,246,.1);">🤖</div>
+      <h2>تنظیمات بات</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_bot">
+
+        <div class="mb-4">
+          <label class="form-label">توکن بات تلگرام</label>
+          <input
+            class="form-control"
+            type="password"
+            name="bot_token"
+            placeholder="{{ bot_token_masked }}"
+            autocomplete="off"
+          >
+          <div class="form-hint">
+            توکن را از @BotFather دریافت کنید. برای حفظ مقدار فعلی خالی بگذارید.
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label">Admin Chat ID</label>
+          <input
+            class="form-control"
+            type="text"
+            name="admin_id"
+            value="{{ admin_id }}"
+            placeholder="213946880"
+          >
+          <div class="form-hint">
+            شناسه چت تلگرام مدیر اصلی. برای پیدا کردن آن از @userinfobot استفاده کنید.
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">💾 ذخیره تنظیمات بات</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Test Message -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(16,185,129,.1);">📤</div>
+      <h2>ارسال پیام آزمایشی</h2>
+    </div>
+    <div class="card-body">
+      <div class="mb-4">
+        <label class="form-label">Chat ID (اختیاری)</label>
+        <input
+          class="form-control"
+          type="text"
+          id="testChatId"
+          placeholder="{{ admin_id }}"
+        >
+        <div class="form-hint">خالی = اولین مقصد پیکربندی‌شده</div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">متن پیام</label>
+        <textarea class="form-control" id="testText" rows="4">✅ پیام آزمایشی از پنل مدیریت بهداشتیک 🎉</textarea>
+      </div>
+
+      <button
+        class="btn btn-success"
+        id="sendTestBtn"
+        data-url="{{ url_for('dashboard.telegram_test') }}"
+      >
+        📤 ارسال پیام آزمایشی
+      </button>
+
+      <div class="form-hint mt-4">
+        برای تست اتصال بات، دکمه بالا را فشار دهید.
+        مطمئن شوید توکن بات در .env تنظیم شده است.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Destinations -->
+<div class="card mt-6">
+  <div class="card-header" style="justify-content:space-between;">
+    <div class="d-flex align-items-center gap-3">
+      <div class="card-icon" style="background:rgba(139,92,246,.1);">📬</div>
+      <h2>مقصدهای اعلان</h2>
+    </div>
+    <span class="badge badge-purple">{{ destinations | length }} مقصد</span>
+  </div>
+  <div class="card-body">
+    <!-- Add Destination Form -->
+    <div style="background:#f8fafc;border:1.5px dashed #e2e8f0;border-radius:10px;padding:18px;margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;">➕ افزودن مقصد جدید</div>
+      <form method="POST">
+        <input type="hidden" name="action" value="add_dest">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:10px;align-items:end;">
+          <div>
+            <label class="form-label">Chat ID</label>
+            <input class="form-control" type="text" name="chat_id" placeholder="-1001234567890" required>
+          </div>
+          <div>
+            <label class="form-label">نام</label>
+            <input class="form-control" type="text" name="name" placeholder="گروه مدیران" required>
+          </div>
+          <div>
+            <label class="form-label">نوع</label>
+            <select class="form-select" name="type" style="width:auto;">
+              <option value="user">کاربر</option>
+              <option value="group">گروه</option>
+              <option value="channel">کانال</option>
+            </select>
+          </div>
+          <div>
+            <button type="submit" class="btn btn-primary">افزودن</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Destinations List -->
+    {% if destinations %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>نام</th>
+          <th>Chat ID</th>
+          <th>نوع</th>
+          <th>عملیات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dest in destinations %}
+        <tr>
+          <td><strong>{{ dest.name }}</strong></td>
+          <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px;">{{ dest.chat_id }}</code></td>
+          <td>
+            <span class="badge badge-{{ 'blue' if dest.type == 'user' else 'purple' if dest.type == 'channel' else 'green' }}">
+              {{ dest.type }}
+            </span>
+          </td>
+          <td>
+            <form method="POST" style="display:inline;">
+              <input type="hidden" name="action" value="remove_dest">
+              <input type="hidden" name="chat_id" value="{{ dest.chat_id }}">
+              <button
+                type="submit"
+                class="btn btn-danger btn-sm"
+                data-confirm="آیا مطمئن هستید که می‌خواهید «{{ dest.name }}» را حذف کنید؟"
+              >
+                🗑 حذف
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <h3>هیچ مقصدی پیکربندی نشده است</h3>
+      <p>از فرم بالا یک Chat ID اضافه کنید تا اعلان‌های سفارش ارسال شوند.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+@media (max-width: 768px) {
+  .grid-responsive { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}

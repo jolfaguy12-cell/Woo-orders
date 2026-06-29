@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+
+{% block title %}داشبورد{% endblock %}
+{% block page_title %}داشبورد{% endblock %}
+{% block breadcrumb %}نمای کلی وضعیت سرویس{% endblock %}
+
+{% block topbar_actions %}
+  <span id="statusTimestamp" style="font-size:11px;color:#94a3b8;"></span>
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<input type="hidden" id="statusApiUrl"     value="{{ url_for('dashboard.api_status') }}">
+<input type="hidden" id="dailyOrdersUrl"   value="{{ url_for('dashboard.api_daily_orders') }}">
+<input type="hidden" id="todayKpiUrl"      value="{{ url_for('dashboard.api_today_kpi') }}">
+
+<!-- ── Service Status ──────────────────────────────────────────────────── -->
+<div class="card mb-6">
+  <div class="card-header">
+    <div class="card-icon" style="background:rgba(99,102,241,.1);">🖥</div>
+    <h2>وضعیت سرویس‌ها</h2>
+  </div>
+  <div class="card-body" style="padding:16px 22px;">
+
+    <div class="service-row">
+      <div>
+        <div class="service-name">🔗 Webhook Server</div>
+        <div class="service-desc">دریافت سفارشات از هاب — پورت 5100</div>
+      </div>
+      <span id="statusWebhook" class="status-badge {{ 'up' if webhook_up else 'down' }}">
+        {{ '● فعال' if webhook_up else '● غیرفعال' }}
+      </span>
+    </div>
+
+    <div class="service-row">
+      <div>
+        <div class="service-name">🏛 Behdashtik Hub Data API</div>
+        <div class="service-desc">منبع داده سفارشات و محصولات — پورت 8090</div>
+      </div>
+      <span id="statusHub" class="status-badge {{ 'up' if hub_up else 'down' }}">
+        {{ '● فعال' if hub_up else '● غیرفعال' }}
+      </span>
+    </div>
+
+    <div class="service-row">
+      <div>
+        <div class="service-name">✈️ Telegram Bot</div>
+        <div class="service-desc">ارسال اعلان‌های تلگرامی به مدیران</div>
+      </div>
+      <span id="statusBot" class="status-badge {{ 'up' if bot_configured else 'warn' }}">
+        {{ '● پیکربندی شده' if bot_configured else '● پیکربندی نشده' }}
+      </span>
+    </div>
+
+    {% if hub_info and 'error' not in hub_info %}
+    <div class="service-row">
+      <div>
+        <div class="service-name">📊 هاب — پایگاه داده</div>
+        <div class="service-desc">
+          {{ hub_info.get('product_count', '?') }} محصول
+          · {{ hub_info.get('order_count', '?') }} سفارش ثبت‌شده
+        </div>
+      </div>
+      <span class="status-badge {{ 'up' if hub_info.get('mirror_db') == 'ok' else 'down' }}">
+        {{ '● DB: سالم' if hub_info.get('mirror_db') == 'ok' else '● DB: ' + (hub_info.get('mirror_db_error') or 'خطا') }}
+      </span>
+    </div>
+    {% elif hub_up %}
+    <div class="service-row">
+      <div>
+        <div class="service-name">📊 هاب — پایگاه داده</div>
+        <div class="service-desc">دریافت اطلاعات ناموفق بود</div>
+      </div>
+      <span class="status-badge down">● خطا در دریافت</span>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- ── Today KPI cards ─────────────────────────────────────────────────── -->
+<div class="card mb-6" id="kpiSection">
+  <div class="card-header" style="justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="card-icon" style="background:rgba(16,185,129,.1);">🗓</div>
+      <div>
+        <h2 style="margin:0;">شاخص‌های کلیدی امروز</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;" id="kpiDate"></div>
+      </div>
+    </div>
+    <button onclick="loadKpis()" class="btn btn-outline btn-sm" id="kpiRefreshBtn">بازخوانی</button>
+  </div>
+  <div class="card-body" style="padding:16px 20px 20px;">
+    <div id="kpiSkeleton">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+        {% for i in range(13) %}
+        <div class="chart-skeleton" style="height:80px;border-radius:8px;"></div>
+        {% endfor %}
+      </div>
+    </div>
+    <div id="kpiCards" style="display:none;"></div>
+    <div id="kpiError" style="display:none;" class="empty-state" style="padding:24px;">
+      <div class="empty-icon">⚠️</div>
+      <p id="kpiErrorMsg">خطا در دریافت اطلاعات</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Comparison chart: Website vs Basalam ────────────────────────────── -->
+<div class="card mb-6">
+  <div class="card-header">
+    <div class="card-icon" style="background:rgba(59,130,246,.1);">📊</div>
+    <div>
+      <h2 style="margin:0;">مقایسه سفارشات — سایت در برابر باسلام</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-top:2px;">۳۰ روز گذشته، بدون لغو و در انتظار پرداخت</div>
+    </div>
+  </div>
+  <div class="card-body" style="padding:16px 20px;">
+    <div id="skeletonComparison" class="chart-skeleton"></div>
+    <div style="direction:ltr;display:none;" id="wrapComparison">
+      <canvas id="chartComparison" height="80"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Total daily orders chart ─────────────────────────────────────────── -->
+<div class="card mb-6">
+  <div class="card-header" style="justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="card-icon" style="background:rgba(99,102,241,.1);">📈</div>
+      <div>
+        <h2 style="margin:0;">سفارشات روزانه — ۳۰ روز گذشته</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">
+          بدون احتساب سفارشات لغو شده و در انتظار پرداخت
+        </div>
+      </div>
+    </div>
+    <div id="chartAllTotal" style="font-size:13px;font-weight:700;color:#6366f1;"></div>
+  </div>
+  <div class="card-body" style="padding:16px 20px;">
+    <div id="skeletonAll" class="chart-skeleton"></div>
+    <div style="direction:ltr;display:none;" id="wrapAll">
+      <canvas id="chartAll" height="90"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recent logs ─────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header" style="justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="card-icon" style="background:rgba(15,23,42,.07);">📋</div>
+      <h2>آخرین لاگ‌ها</h2>
+    </div>
+    <a href="{{ url_for('dashboard.logs') }}" class="btn btn-outline btn-sm">مشاهده همه</a>
+  </div>
+  <div class="card-body" style="padding:16px;">
+    {% if recent_logs %}
+    <div class="log-viewer" style="max-height:260px;" id="logViewer">
+      {% for line in recent_logs %}
+      <div class="log-line">{{ line }}</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:24px;">
+      <div class="empty-icon">📭</div>
+      <p>هیچ لاگی یافت نشد.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<style>
+.chart-skeleton {
+  height: 180px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* KPI grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi-section-label {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #94a3b8;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .15s;
+}
+.kpi-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--kpi-color, #6366f1);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.kpi-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: 3px;
+  letter-spacing: -.02em;
+}
+.kpi-value.money { font-size: 17px; }
+.kpi-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.kpi-card.c-green  { --kpi-color: var(--success); }
+.kpi-card.c-blue   { --kpi-color: #3b82f6; }
+.kpi-card.c-purple { --kpi-color: #8b5cf6; }
+.kpi-card.c-red    { --kpi-color: var(--danger); }
+.kpi-card.c-teal   { --kpi-color: #14b8a6; }
+.kpi-card.c-accent { --kpi-color: var(--accent); }
+.kpi-card.c-orange { --kpi-color: #f97316; }
+.kpi-card.c-amber  { --kpi-color: #f59e0b; }
+.kpi-note {
+  background: rgba(245,158,11,.08);
+  border: 1px solid rgba(245,158,11,.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #92400e;
+  margin-top: 12px;
+}
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── Chart defaults ──────────────────────────────────────────────── */
+  Chart.defaults.font.family = "'Vazirmatn', system-ui, sans-serif";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.color = '#64748b';
+
+  const GRID_COLOR = 'rgba(226,232,240,.7)';
+
+  function makeAreaConfig(labels, datasets) {
+    return {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: datasets.length > 1, position: 'top', align: 'start' },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            titleColor: '#94a3b8',
+            bodyColor: '#f8fafc',
+            padding: 10,
+            callbacks: {
+              title: (items) => items[0].label,
+              label: (item) => ` ${item.dataset.label}: ${item.raw} سفارش`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: GRID_COLOR, drawBorder: false },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 8,
+              callback: (_, i, arr) => {
+                const lbl = arr[i]?.label || '';
+                const parts = lbl.split('-');
+                return parts.length === 3 ? `${parts[1]}/${parts[2]}` : lbl;
+              },
+            },
+          },
+          y: {
+            grid: { color: GRID_COLOR, drawBorder: false },
+            beginAtZero: true,
+            ticks: { stepSize: 1, precision: 0 },
+          },
+        },
+      },
+    };
+  }
+
+  function makeDataset(label, data, color) {
+    return {
+      label,
+      data,
+      borderColor: color,
+      backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.12)'),
+      borderWidth: 2,
+      pointRadius: data.length > 20 ? 0 : 3,
+      pointHoverRadius: 5,
+      pointBackgroundColor: color,
+      fill: true,
+      tension: 0.35,
+    };
+  }
+
+  /* ── KPI helpers ──────────────────────────────────────────────── */
+  function fmtMoney(n) {
+    return Number(n).toLocaleString('en') + ' ت';
+  }
+  function fmtNum(n) {
+    return Number(n).toLocaleString('en');
+  }
+
+  function kpiCard(label, value, cls, sub) {
+    return `<div class="kpi-card ${cls}">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value${value.toString().includes(' ت') ? ' money' : ''}">${value}</div>
+      ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  /* ── Load KPI data ───────────────────────────────────────────── */
+  function loadKpis() {
+    document.getElementById('kpiSkeleton').style.display = 'block';
+    document.getElementById('kpiCards').style.display = 'none';
+    document.getElementById('kpiError').style.display = 'none';
+
+    fetch(document.getElementById('todayKpiUrl').value)
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('kpiSkeleton').style.display = 'none';
+
+        if (!d.hub_up) {
+          document.getElementById('kpiError').style.display = 'block';
+          document.getElementById('kpiErrorMsg').textContent = 'هاب در دسترس نیست';
+          return;
+        }
+        if (d.error) {
+          document.getElementById('kpiError').style.display = 'block';
+          document.getElementById('kpiErrorMsg').textContent = 'خطا: ' + d.error;
+          return;
+        }
+
+        const dateEl = document.getElementById('kpiDate');
+        if (dateEl && d.date_persian) {
+          dateEl.textContent = 'تاریخ: ' + d.date_persian + ' (به وقت تهران)';
+        }
+
+        let html = `<div class="kpi-grid">`;
+
+        // Section 1: Orders
+        html += `<div class="kpi-section-label">📦 سفارشات امروز</div>`;
+        html += kpiCard('کل سفارشات', fmtNum(d.total_orders), 'c-accent', 'بدون لغو و در انتظار');
+        html += kpiCard('سفارشات سایت', fmtNum(d.website_orders), 'c-blue', 'WooCommerce');
+        html += kpiCard('سفارشات باسلام', fmtNum(d.basalam_orders), 'c-purple', 'Basalam');
+        html += kpiCard('لغو شده', fmtNum(d.cancelled_orders), 'c-red', 'امروز');
+        html += kpiCard('ارسال رایگان', fmtNum(d.free_ship_orders), 'c-teal', 'مجموع ≥ ۲ میلیون ت');
+
+        // Section 2: Sales
+        html += `<div class="kpi-section-label">💰 فروش امروز</div>`;
+        html += kpiCard('جمع فروش', fmtMoney(d.daily_sales), 'c-green', 'مجموع پرداختی مشتریان');
+        html += kpiCard('بدون هزینه ارسال', fmtMoney(d.sales_excl_shipping), 'c-green', 'فروش خالص محصول');
+        html += kpiCard('فروش خالص فروشنده', fmtMoney(d.daily_sales_net), 'c-green', 'بدون کمیسیون و ارسال');
+        html += kpiCard('هزینه ارسال', fmtMoney(d.total_shipping), 'c-amber', 'جمع هزینه ارسال');
+
+        // Section 3: Basalam
+        html += `<div class="kpi-section-label">🛍 باسلام</div>`;
+        html += kpiCard('جمع فروش باسلام', fmtMoney(d.basalam_total_sales), 'c-purple', 'مجموع پرداختی');
+        html += kpiCard('خالص بعد از کمیسیون', fmtMoney(d.basalam_net_sales), 'c-purple', 'مانده حساب باسلام');
+
+        // Section 4: Fulfillment
+        html += `<div class="kpi-section-label">📮 ارسال و شهر</div>`;
+        html += kpiCard('بسته ارسال شده', fmtNum(d.packages_shipped), 'c-orange', 'امروز');
+        html += kpiCard('سفارشات قم', fmtNum(d.qom_orders), 'c-teal', 'شهر قم');
+        html += kpiCard('سایر شهرها', fmtNum(d.non_qom_orders), 'c-blue', 'خارج از قم');
+
+        html += `</div>`;
+
+        // Notes
+        if (d.notes && d.notes.length) {
+          d.notes.forEach(n => {
+            html += `<div class="kpi-note">⚠️ ${n}</div>`;
+          });
+        }
+
+        const cardsEl = document.getElementById('kpiCards');
+        cardsEl.innerHTML = html;
+        cardsEl.style.display = 'block';
+      })
+      .catch(err => {
+        document.getElementById('kpiSkeleton').style.display = 'none';
+        document.getElementById('kpiError').style.display = 'block';
+        document.getElementById('kpiErrorMsg').textContent = 'خطای شبکه';
+        console.error('KPI load failed:', err);
+      });
+  }
+
+  /* ── Load chart data ─────────────────────────────────────────────── */
+  function loadCharts() {
+    const url = document.getElementById('dailyOrdersUrl').value;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.hub_up) {
+          ['skeletonComparison', 'skeletonAll'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.style.animation = 'none';
+              el.style.background = '#f8fafc';
+              el.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;color:#94a3b8;font-size:13px;"><span style="font-size:24px;">📡</span><span>هاب در دسترس نیست</span></div>';
+            }
+          });
+          return;
+        }
+
+        const { labels, all, website, basalam } = d;
+
+        /* total shown in header */
+        const total = all.reduce((s, n) => s + n, 0);
+        const el = document.getElementById('chartAllTotal');
+        if (el) el.textContent = `مجموع: ${total} سفارش`;
+
+        function showChart(skeletonId, wrapperId, canvasId, config) {
+          document.getElementById(skeletonId).style.display = 'none';
+          const wrap = document.getElementById(wrapperId);
+          wrap.style.display = 'block';
+          new Chart(document.getElementById(canvasId), config);
+        }
+
+        // Comparison chart: Website vs Basalam on same canvas
+        showChart(
+          'skeletonComparison', 'wrapComparison', 'chartComparison',
+          makeAreaConfig(labels, [
+            makeDataset('سایت', website, 'rgb(59,130,246)'),
+            makeDataset('باسلام', basalam, 'rgb(139,92,246)'),
+          ])
+        );
+
+        // Total chart
+        showChart(
+          'skeletonAll', 'wrapAll', 'chartAll',
+          makeAreaConfig(labels, [
+            makeDataset('کل سفارشات', all, 'rgb(99,102,241)'),
+          ])
+        );
+      })
+      .catch(err => console.error('chart load failed:', err));
+  }
+
+  /* ── Init ────────────────────────────────────────────────────────── */
+  loadKpis();
+  loadCharts();
+
+  // Expose for refresh button
+  window.loadKpis = loadKpis;
+
+})();
+</script>
+{% endblock %}

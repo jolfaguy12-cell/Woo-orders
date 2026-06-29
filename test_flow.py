@@ -34,7 +34,7 @@ os.environ.update({
     'TELEGRAM_DRY_RUN': '1',           # keep dry-run; no real API calls
     'ORDER_STATE_DB': _DB_FILE,         # isolated temp DB
     'TG_DESTINATIONS_FILE': _DEST_FILE, # isolated temp destinations
-    'TARGET_ORDER_STATUSES': 'processing,wc-ready-to-ship',
+    'TARGET_ORDER_STATUSES': 'processing,ready-to-ship,bslm-preparation,bslm-shipping,bslm-wait-vendor,bslm-rejected,refunded',
     'STATE_RETENTION_DAYS': '30',
 })
 
@@ -80,21 +80,33 @@ def _setup():
 def _sample(overrides: dict) -> dict:
     base = {
         'id': 12345,
-        'status': 'processing',
-        'date_created': '2023-10-25T14:30:00',
-        'created_via': 'checkout',
+        'status': 'bslm-preparation',
+        'date_created': '2026-06-28T10:00:00',
         'total': '530000',
-        'shipping_total': '30000',
+        'shipping_total': '0',
         'total_tax': '0',
         'discount_total': '0',
         'customer_note': '',
-        'payment_method_title': 'پرداخت آنلاین',
+        'payment_method': 'basalam payment method',
+        'payment_method_title': 'Basalam Payment',
+        'order_source': 'basalam',
+        'basalam': {
+            'hash_id': 'TEST01',
+            'balance_amount': '477000',
+            'fee_amount': '-53000',
+            'purchase_count': 2,
+        },
         'billing': {'first_name': 'علی', 'last_name': 'رضایی', 'phone': '09123456789'},
         'shipping': {'first_name': 'علی', 'last_name': 'رضایی',
                      'address_1': 'تهران، خیابان آزادی', 'address_2': '', 'postcode': '1234567890'},
         'line_items': [{'name': 'محصول', 'quantity': 1, 'price': '530000', 'total': '530000'}],
-        'shipping_lines': [{'method_title': 'پست'}],
-        'meta_data': [{'key': 'source', 'value': 'basalam'}],
+        'shipping_lines': [{'method_title': 'پیک موتوری پس کرایه'}],
+        'meta_data': [
+            {'key': '_sync_basalam_hash_id', 'value': 'TEST01'},
+            {'key': '_basalam_balance_amount', 'value': '477000'},
+            {'key': '_basalam_fee_amount', 'value': '-53000'},
+            {'key': '_basalam_purchase_count', 'value': '2'},
+        ],
     }
     return {**base, **overrides}
 
@@ -104,8 +116,8 @@ def _sample(overrides: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def check1_basalam_processing():
-    """Basalam + processing → notify + store state and message_id."""
-    order = _sample({'id': 12345, 'status': 'processing'})
+    """Basalam + bslm-preparation → notify + store state and message_id."""
+    order = _sample({'id': 12345, 'status': 'bslm-preparation'})
     result = process_order(order)
 
     state = order_state.get_order_state(_ORDER_ID)
@@ -122,11 +134,11 @@ def check1_basalam_processing():
 
 
 def check2_status_change():
-    """Same order, new target status → delete old msg_id, send new, update stored id."""
+    """Same order, status advance to bslm-shipping → delete old msg_id, send new, update stored id."""
     telegram_notify._dry_run_deleted.clear()
     mid_before = order_state.get_message_id(_ORDER_ID, _DEST_CHAT_ID)
 
-    order = _sample({'id': 12345, 'status': 'wc-ready-to-ship'})
+    order = _sample({'id': 12345, 'status': 'bslm-shipping'})
     result = process_order(order)
 
     mid_after = order_state.get_message_id(_ORDER_ID, _DEST_CHAT_ID)
@@ -146,8 +158,8 @@ def check2_status_change():
 
 
 def check3_non_target_status():
-    """Basalam + non-target status (completed) → skip, no notification."""
-    order = _sample({'id': 99991, 'status': 'completed'})
+    """Basalam + non-target status (pending) → skip, no notification."""
+    order = _sample({'id': 99991, 'status': 'pending'})
     result = process_order(order)
 
     ok = (
@@ -158,14 +170,38 @@ def check3_non_target_status():
 
 
 def check4_non_basalam():
-    """Non-Basalam order + processing → skip, no notification."""
-    order = _sample({'id': 99992, 'status': 'processing', 'meta_data': []})
+    """Non-Basalam order + bslm-preparation → skip when basalam_only=True in dashboard settings."""
+    import process_order as _po
+    order = _sample({'id': 99992, 'status': 'bslm-preparation',
+                     'order_source': None, 'payment_method': '', 'meta_data': []})
+    with mock.patch.object(_po, '_is_basalam_only', return_value=True):
+        result = process_order(order)
+
+    ok = (
+        result['notified'] is False
+        and result['skipped_reason'] == 'basalam_only_mode'
+    )
+    return ok, f"notified={result['notified']} reason={result['skipped_reason']}"
+
+
+def check5_basalam_completed_skipped():
+    """Basalam + bslm-completed → skip silently (not in TARGET_ORDER_STATUSES)."""
+    order = _sample({'id': 99993, 'status': 'bslm-completed'})
     result = process_order(order)
 
     ok = (
         result['notified'] is False
-        and result['skipped_reason'] == 'not_basalam'
+        and 'status_not_targeted' in (result['skipped_reason'] or '')
     )
+    return ok, f"notified={result['notified']} reason={result['skipped_reason']}"
+
+
+def check6_basalam_preparation_still_works():
+    """Basalam + bslm-preparation (active order) → notified normally."""
+    order = _sample({'id': 99994, 'status': 'bslm-preparation'})
+    result = process_order(order)
+
+    ok = result['notified'] is True and result['skipped_reason'] is None
     return ok, f"notified={result['notified']} reason={result['skipped_reason']}"
 
 
@@ -177,10 +213,12 @@ def main() -> int:
     _setup()
 
     checks = [
-        ("Basalam + processing → notified + state + msg_id stored", check1_basalam_processing),
-        ("Status change → old msg deleted, new msg_id stored", check2_status_change),
-        ("Basalam + non-target status → skipped (no notification)", check3_non_target_status),
-        ("Non-Basalam + processing → skipped (not_basalam)", check4_non_basalam),
+        ("Basalam + bslm-preparation → notified + state + msg_id stored", check1_basalam_processing),
+        ("Status → bslm-shipping → old msg deleted, new msg_id stored", check2_status_change),
+        ("Basalam + non-target status (pending) → skipped", check3_non_target_status),
+        ("Non-Basalam + bslm-preparation → skipped (basalam_only_mode)", check4_non_basalam),
+        ("Basalam + bslm-completed → skipped silently", check5_basalam_completed_skipped),
+        ("Basalam + bslm-preparation (new order) → notified normally", check6_basalam_preparation_still_works),
     ]
 
     all_passed = True

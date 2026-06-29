@@ -23,9 +23,40 @@ from telegram_notify import send_order_notification
 
 TARGET_ORDER_STATUSES: list[str] = [
     s.strip()
-    for s in os.getenv('TARGET_ORDER_STATUSES', 'processing,wc-ready-to-ship').split(',')
+    for s in os.getenv(
+        'TARGET_ORDER_STATUSES',
+        'processing,ready-to-ship,bslm-preparation,bslm-shipping,bslm-wait-vendor,bslm-rejected,refunded',
+    ).split(',')
     if s.strip()
 ]
+
+
+def _read_settings() -> dict:
+    try:
+        f = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'dashboard', 'data', 'settings.json')
+        with open(f, 'r', encoding='utf-8') as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _should_send_pdf() -> bool:
+    return bool(_read_settings().get('send_pdf_with_new_order', True))
+
+
+def _is_basalam_only() -> bool:
+    return bool(_read_settings().get('basalam_only', False))
+
+
+def _normalize_status(status: str) -> str:
+    """Strip the leading 'wc-' prefix that WordPress adds to custom status slugs.
+
+    Hub normally does this before sending the webhook payload, but if a raw
+    WooCommerce status arrives (e.g. 'wc-bslm-preparation') this ensures the
+    comparison against TARGET_ORDER_STATUSES still works.
+    """
+    return status[3:] if status.startswith('wc-') else status
 
 
 def process_order(order: dict) -> dict:
@@ -45,6 +76,7 @@ def process_order(order: dict) -> dict:
 
     order_id = str(order.get('id', 'UNKNOWN'))
     status = order.get('status', '')
+    status_key = _normalize_status(status)
 
     result: dict = {
         'order_id': order_id,
@@ -54,23 +86,26 @@ def process_order(order: dict) -> dict:
         'skipped_reason': None,
     }
 
-    if not is_basalam_order(order):
-        result['skipped_reason'] = 'not_basalam'
-        print(f"Order {order_id}: not a Basalam order — skipping.")
+    if not is_basalam_order(order) and _is_basalam_only():
+        result['skipped_reason'] = 'basalam_only_mode'
+        print(f"Order {order_id}: basalam_only=true — skipping non-Basalam order.")
         return result
 
-    if status not in TARGET_ORDER_STATUSES:
+    if status_key not in TARGET_ORDER_STATUSES:
         result['skipped_reason'] = f'status_not_targeted ({status!r})'
         print(f"Order {order_id}: status {status!r} not in target list — skipping.")
         return result
 
     prev = get_order_state(order_id)
-    if prev and prev['status'] == status and prev['notified']:
+    if prev and _normalize_status(prev['status']) == status_key and prev['notified']:
         result['skipped_reason'] = 'already_notified_for_this_status'
         print(f"Order {order_id}: already notified for status {status!r} — skipping.")
         return result
 
-    pdf_path = generate_pdf(order)
+    if _should_send_pdf():
+        pdf_path = generate_pdf(order)
+    else:
+        pdf_path = None
     result['pdf'] = pdf_path
 
     send_order_notification(order, pdf_path)

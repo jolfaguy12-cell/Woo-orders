@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}تنظیمات عمومی{% endblock %}
+{% block page_title %}تنظیمات عمومی{% endblock %}
+{% block breadcrumb %}پیکربندی هاب، فروشگاه، و سرور{% endblock %}
+
+{% block content %}
+{% if success %}
+  <div class="alert alert-success mb-4" data-auto-dismiss>✓ {{ success }}</div>
+{% endif %}
+
+<div style="display:grid;gap:20px;">
+
+  <!-- Hub Settings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(99,102,241,.1);">🏛</div>
+      <h2>Behdashtik Hub API</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_hub">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="two-col">
+          <div>
+            <label class="form-label">آدرس Hub API</label>
+            <input class="form-control" type="text" name="hub_url" value="{{ cfg.hub_url }}">
+            <div class="form-hint">پورت 8090 برای API داده‌ها</div>
+          </div>
+          <div>
+            <label class="form-label">Hub API Key</label>
+            <input class="form-control" type="password" name="hub_api_key"
+              placeholder="{{ hub_api_key_masked }}" autocomplete="off">
+            <div class="form-hint">برای حفظ مقدار فعلی خالی بگذارید.</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn btn-primary">💾 ذخیره تنظیمات هاب</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Store Settings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(16,185,129,.1);">🏪</div>
+      <h2>اطلاعات فروشگاه</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_store">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="two-col">
+          <div>
+            <label class="form-label">نام فروشگاه</label>
+            <input class="form-control" type="text" name="store_name"
+              value="{{ env.get('STORE_NAME', '') }}">
+          </div>
+          <div>
+            <label class="form-label">تلفن فروشگاه</label>
+            <input class="form-control" type="text" name="store_phone"
+              value="{{ env.get('STORE_PHONE', '') }}">
+          </div>
+          <div style="grid-column:span 2;">
+            <label class="form-label">آدرس فروشگاه</label>
+            <input class="form-control" type="text" name="store_address"
+              value="{{ env.get('STORE_ADDRESS', '') }}">
+            <div class="form-hint">این اطلاعات در PDF فاکتور استفاده می‌شود.</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn btn-primary">💾 ذخیره اطلاعات فروشگاه</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Webhook Settings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(245,158,11,.1);">🔗</div>
+      <h2>تنظیمات Webhook</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_webhook">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="two-col">
+          <div>
+            <label class="form-label">Webhook Secret</label>
+            <input class="form-control" type="password" name="webhook_secret"
+              placeholder="{{ webhook_secret_masked }}" autocomplete="off">
+            <div class="form-hint">باید با سکرت تنظیم‌شده در هاب یکسان باشد.</div>
+          </div>
+          <div>
+            <label class="form-label">پورت Webhook</label>
+            <input class="form-control" type="number" name="webhook_port"
+              value="{{ env.get('WEBHOOK_PORT', '5100') }}">
+            <div class="form-hint">پیش‌فرض: 5100. پورت 5000 متعلق به هاب است.</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn btn-primary">💾 ذخیره تنظیمات Webhook</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- System Info (read-only) -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(100,116,139,.1);">ℹ️</div>
+      <h2>اطلاعات سیستم</h2>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <table class="data-table">
+        <tbody>
+          <tr>
+            <td style="font-weight:600;width:200px;">پورت Dashboard</td>
+            <td><code>8000</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">URL داشبورد</td>
+            <td><code>https://support.behdashtik.ir/orders-api</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">پورت Webhook</td>
+            <td><code>{{ env.get('WEBHOOK_PORT', '5100') }}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">پایگاه داده</td>
+            <td><code>{{ env.get('ORDER_STATE_DB', './data/order_state.sqlite3') }}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">فایل مقصدها</td>
+            <td><code>{{ env.get('TG_DESTINATIONS_FILE', 'telegram_destinations.json') }}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Hub URL</td>
+            <td><code>{{ cfg.hub_url }}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">نگه‌داری رکورد</td>
+            <td><code>{{ env.get('STATE_RETENTION_DAYS', '30') }} روز</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Daily Report Settings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(99,102,241,.1);">📊</div>
+      <h2>گزارش روزانه خودکار</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_daily_report">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="two-col">
+          <div>
+            <label class="form-label">وضعیت ارسال خودکار</label>
+            <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;">
+                <input type="radio" name="dr_enabled" value="1"
+                  {{ 'checked' if cfg.get('daily_report',{}).get('enabled', True) }}>
+                فعال
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;">
+                <input type="radio" name="dr_enabled" value="0"
+                  {{ 'checked' if not cfg.get('daily_report',{}).get('enabled', True) }}>
+                غیرفعال
+              </label>
+            </div>
+            <div class="form-hint">گزارش روزانه به همه مقصدهای تلگرام ارسال می‌شود.</div>
+          </div>
+          <div>
+            <label class="form-label">زمان ارسال (به وقت تهران)</label>
+            <input class="form-control" type="time" name="dr_send_time"
+              value="{{ cfg.get('daily_report', {}).get('send_time', '23:55') }}">
+            <div class="form-hint">پیش‌فرض: ۲۳:۵۵ — فرمت HH:MM</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button type="submit" class="btn btn-primary">💾 ذخیره تنظیمات گزارش</button>
+          <button type="button" id="btnTestReport" class="btn btn-outline">
+            📨 ارسال آزمایشی الان
+          </button>
+          <span id="testReportStatus" style="font-size:13px;color:#64748b;"></span>
+        </div>
+      </form>
+      <div id="schedulerInfo" style="margin-top:12px;font-size:12px;color:#94a3b8;"></div>
+    </div>
+  </div>
+
+  <!-- Invoice API -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(16,185,129,.1);">📄</div>
+      <h2>Invoice API (خارجی)</h2>
+    </div>
+    <div class="card-body">
+      <div style="margin-bottom:16px;">
+        <label class="form-label">کلید API فعلی</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <code style="font-size:13px;background:var(--bg);padding:6px 10px;border-radius:6px;border:1px solid var(--border);">
+            {{ invoice_api_key_masked if invoice_api_key_masked != '••••••••' else '(تنظیم نشده)' }}
+          </code>
+        </div>
+        <div class="form-hint">
+          آدرس endpoint:
+          <code>GET https://support.behdashtik.ir/orders-api/api/v1/invoice/{شناسه‌سفارش}</code>
+          — هدر مورد نیاز: <code>X-Invoice-API-Key: &lt;key&gt;</code>
+        </div>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="generate_invoice_key">
+        <button type="submit" class="btn btn-outline"
+                onclick="return confirm('کلید فعلی باطل و کلید جدید ایجاد می‌شود. ادامه می‌دهید؟')">
+          🔄 ایجاد / تجدید کلید API
+        </button>
+      </form>
+      {% if cfg.get('invoice_api_key') %}
+      <div style="margin-top:12px;font-size:12px;color:#059669;">
+        ✓ کلید فعال است. برای مشاهده مستندات کامل به
+        <code>dashboard/docs/invoice-api.md</code> مراجعه کنید.
+      </div>
+      {% else %}
+      <div style="margin-top:12px;font-size:12px;color:#dc2626;">
+        ✗ هنوز کلیدی ایجاد نشده است. API غیرفعال است تا زمانی که کلید تولید شود.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Telegram Manager IDs -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(14,165,233,.1);">📱</div>
+      <h2>مدیران تلگرام</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="save_manager_ids">
+        <div class="form-group">
+          <label class="form-label">شناسه‌های مجاز (Chat ID)</label>
+          <textarea name="manager_ids" rows="4" class="form-control"
+            placeholder="یک Chat ID در هر خط&#10;مثال:&#10;213946880&#10;987654321"
+            style="font-family:monospace;font-size:13px;">{{ manager_ids_text }}</textarea>
+          <div class="form-hint">
+            کاربرانی که می‌توانند جستجوی سفارش را از طریق ربات تلگرام انجام دهند.
+            شناسه اصلی ادمین (<code>TG_ADMIN_ID</code>) همیشه مجاز است.
+            Chat ID را با ارسال پیام به <code>@userinfobot</code> بیابید.
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">💾 ذخیره</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="card" style="border-color:rgba(239,68,68,.3);">
+    <div class="card-header" style="background:rgba(239,68,68,.04);">
+      <div class="card-icon" style="background:rgba(239,68,68,.1);">⚠️</div>
+      <h2 style="color:var(--danger);">ناحیه خطر</h2>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;">تغییر رمز عبور</div>
+          <div class="form-hint">رمز عبور پنل مدیریت را تغییر دهید.</div>
+        </div>
+        <a href="{{ url_for('dashboard.change_password') }}" class="btn btn-danger">
+          🔑 تغییر رمز عبور
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+@media (max-width: 768px) {
+  .two-col { grid-template-columns: 1fr !important; }
+}
+</style>
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const btn = document.getElementById('btnTestReport');
+  const status = document.getElementById('testReportStatus');
+  const sched = document.getElementById('schedulerInfo');
+
+  // Load scheduler next fire time
+  fetch('{{ url_for("dashboard.api_scheduler_status") }}')
+    .then(r => r.json())
+    .then(d => {
+      if (d.next_fire && sched) {
+        const dt = new Date(d.next_fire);
+        sched.textContent = 'ارسال بعدی: ' + dt.toLocaleString('fa-IR');
+      }
+    }).catch(() => {});
+
+  if (btn) {
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      status.textContent = 'در حال ارسال...';
+      fetch('{{ url_for("dashboard.api_daily_report_test") }}', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            status.style.color = '#059669';
+            status.textContent = `ارسال شد — ${d.sent} مقصد`;
+          } else {
+            status.style.color = '#dc2626';
+            status.textContent = 'خطا: ' + (d.error || 'نامشخص');
+          }
+        })
+        .catch(e => {
+          status.style.color = '#dc2626';
+          status.textContent = 'خطای شبکه';
+        })
+        .finally(() => { btn.disabled = false; });
+    });
+  }
+})();
+</script>
+{% endblock %}
+{% endblock %}

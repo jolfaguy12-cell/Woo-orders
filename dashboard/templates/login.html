@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ورود — پنل مدیریت سفارشات بهداشتیک</title>
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-header">
+      <div style="font-size:36px;">📦</div>
+      <h1>پنل مدیریت سفارشات</h1>
+      <p>بهداشتیک — سرویس اعلان تلگرام</p>
+    </div>
+    <div class="login-body">
+      {% if error %}
+        <div class="alert alert-danger mb-4">✗ {{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('dashboard.login') }}">
+        <div style="margin-bottom:16px;">
+          <label class="form-label" for="username">نام کاربری</label>
+          <input
+            class="form-control"
+            type="text"
+            id="username"
+            name="username"
+            placeholder="admin"
+            required
+            autocomplete="username"
+            autofocus
+          >
+        </div>
+        <div style="margin-bottom:24px;">
+          <label class="form-label" for="password">رمز عبور</label>
+          <input
+            class="form-control"
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            required
+            autocomplete="current-password"
+          >
+        </div>
+        <button type="submit" class="btn btn-primary w-100" style="justify-content:center;">
+          ورود به پنل
+        </button>
+      </form>
+
+      <div style="margin-top:16px;padding:12px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b;text-align:center;">
+        🔒 این پنل تنها از طریق شبکه داخلی قابل دسترسی است
+      </div>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('dashboard.static', filename='js/app.js') }}"></script>
+</body>
+</html>

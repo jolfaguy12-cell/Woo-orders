@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}سفارشات اخیر{% endblock %}
+{% block page_title %}سفارشات اخیر{% endblock %}
+{% block breadcrumb %}دریافت از Behdashtik Hub{% endblock %}
+
+{% block content %}
+
+<!-- Filters -->
+<div class="card mb-4">
+  <div class="card-body" style="padding:16px 22px;">
+    <form method="GET" class="orders-filter-form">
+      <div class="filter-group">
+        <label class="form-label">جستجو</label>
+        <input class="form-control" type="text" name="search"
+               value="{{ search_q }}"
+               placeholder="شماره سفارش، موبایل، یا نام مشتری"
+               style="min-width:220px;">
+      </div>
+      <div class="filter-group">
+        <label class="form-label">فیلتر وضعیت</label>
+        <select class="form-select" name="status">
+          <option value="">همه وضعیت‌ها</option>
+          {% for slug, label, _ in all_statuses %}
+          <option value="{{ slug }}" {% if status_filter == slug %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">منبع سفارش</label>
+        <select class="form-select" name="source">
+          <option value="">همه منابع</option>
+          <option value="basalam" {% if source_filter == 'basalam' %}selected{% endif %}>باسلام</option>
+          <option value="website" {% if source_filter == 'website' %}selected{% endif %}>سایت</option>
+          <option value="manual"  {% if source_filter == 'manual'  %}selected{% endif %}>دستی</option>
+          <option value="unknown" {% if source_filter == 'unknown' %}selected{% endif %}>نامشخص</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;align-self:flex-end;">
+        <button type="submit" class="btn btn-primary">اعمال</button>
+        <a href="{{ url_for('dashboard.orders') }}" class="btn btn-outline">پاک کردن</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if not hub_up %}
+<div class="alert alert-danger mb-4">
+  ✗ هاب در دسترس نیست. پورت 8090 غیرفعال است.
+</div>
+{% elif orders_data and orders_data.get('error') %}
+<div class="alert alert-danger mb-4">
+  ✗ خطا: {{ orders_data.error }}
+</div>
+{% else %}
+
+<div class="card">
+  <div class="card-header" style="justify-content:space-between;">
+    <div class="d-flex align-items-center gap-3">
+      <div class="card-icon" style="background:rgba(59,130,246,.1);">🛒</div>
+      <h2>سفارشات</h2>
+    </div>
+    {% if orders_data and orders_data.get('pagination') %}
+    <span class="badge badge-blue">{{ orders_data.pagination.get('total', '') }} سفارش</span>
+    {% endif %}
+  </div>
+
+  {% if orders_data and orders_data.get('data') %}
+
+  {# ───── Desktop Table ───── #}
+  <div class="orders-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>شناسه</th>
+          <th>وضعیت</th>
+          <th>منبع</th>
+          <th>تلفن</th>
+          <th>مبلغ</th>
+          <th>روش پرداخت</th>
+          <th>تاریخ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders_data.data %}
+        {% set src = order.order_source or 'unknown' %}
+        <tr>
+          <td><strong style="color:var(--accent);">#{{ order.id }}</strong></td>
+          <td>
+            <span class="badge badge-{% if 'complet' in order.status %}green{% elif 'cancel' in order.status or 'reject' in order.status %}red{% elif 'bslm' in order.status %}purple{% elif 'process' in order.status %}blue{% else %}gray{% endif %}">
+              {{ status_labels.get(order.status, order.status) }}
+            </span>
+          </td>
+          <td>
+            <span class="badge badge-{% if src == 'basalam' %}purple{% elif src == 'website' %}blue{% elif src == 'manual' %}orange{% else %}gray{% endif %}">
+              {% if src == 'basalam' %}🛍 باسلام
+              {% elif src == 'website' %}🌐 سایت
+              {% elif src == 'manual' %}✍️ دستی
+              {% else %}{{ src }}{% endif %}
+            </span>
+          </td>
+          <td>
+            {% if order.has_phone %}
+              <span style="font-size:12px;font-family:monospace;">{{ order.phone_masked or '•••' }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            {% if order.total %}
+              <strong>{{ '{:,.0f}'.format(order.total | float) }}</strong>
+              <span style="font-size:11px;color:#94a3b8;">ت</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td style="font-size:12px;color:#64748b;">{{ order.payment_method_title or order.payment_method or '—' }}</td>
+          <td style="font-size:12px;color:#64748b;white-space:nowrap;">{{ order.date_created[:10] if order.date_created else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ───── Mobile Cards ───── #}
+  <div class="orders-cards-wrap">
+    {% for order in orders_data.data %}
+    {% set src = order.order_source or 'unknown' %}
+    {% set status_color = 'green' if 'complet' in order.status else ('red' if 'cancel' in order.status or 'reject' in order.status else ('purple' if 'bslm' in order.status else ('blue' if 'process' in order.status else 'gray'))) %}
+    {% set src_color = 'purple' if src == 'basalam' else ('blue' if src == 'website' else ('orange' if src == 'manual' else 'gray')) %}
+    <div class="order-card">
+      <div class="order-card-row order-card-top">
+        <strong style="color:var(--accent);font-size:15px;">#{{ order.id }}</strong>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="badge badge-{{ status_color }}">{{ status_labels.get(order.status, order.status) }}</span>
+        </div>
+      </div>
+      <div class="order-card-row">
+        <span class="badge badge-{{ src_color }}">
+          {% if src == 'basalam' %}🛍 باسلام
+          {% elif src == 'website' %}🌐 سایت
+          {% elif src == 'manual' %}✍️ دستی
+          {% else %}{{ src }}{% endif %}
+        </span>
+        <span style="font-size:11px;color:#94a3b8;font-family:monospace;">
+          {{ order.date_created[:10] if order.date_created else '—' }}
+        </span>
+      </div>
+      <div class="order-card-row">
+        <div>
+          {% if order.total %}
+            <strong style="font-size:15px;">{{ '{:,.0f}'.format(order.total | float) }}</strong>
+            <span style="font-size:11px;color:#94a3b8;">ت</span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </div>
+        <span style="font-size:12px;color:#64748b;text-align:left;">
+          {{ order.payment_method_title or order.payment_method or '—' }}
+        </span>
+      </div>
+      {% if order.has_phone %}
+      <div class="order-card-row" style="border-top:none;padding-top:0;">
+        <span style="font-size:11px;color:#94a3b8;">تلفن</span>
+        <span style="font-size:12px;font-family:monospace;">{{ order.phone_masked or '•••' }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if orders_data.pagination %}
+  {% set pg = orders_data.pagination %}
+  <div class="pagination">
+    {% if page > 1 %}
+    <a href="{{ url_for('dashboard.orders', page=page-1, status=status_filter, source=source_filter, search=search_q) }}"
+       class="page-btn">→ قبلی</a>
+    {% endif %}
+    <span style="font-size:13px;color:#64748b;padding:0 12px;">
+      صفحه {{ pg.page }} از {{ pg.pages }}
+    </span>
+    {% if page < pg.pages %}
+    <a href="{{ url_for('dashboard.orders', page=page+1, status=status_filter, source=source_filter, search=search_q) }}"
+       class="page-btn">← بعدی</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="card-body">
+    <div class="empty-state">
+      <div class="empty-icon">🛒</div>
+      <h3>سفارشی یافت نشد</h3>
+      <p>سفارشی با فیلترهای انتخابی وجود ندارد.</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<style>
+/* ── Filter form ── */
+.orders-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+.filter-group { display: flex; flex-direction: column; }
+.filter-group .form-select { min-width: 160px; }
+
+/* ── Responsive visibility ── */
+.orders-cards-wrap { display: none; }
+
+/* ── Mobile order cards ── */
+.order-card {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.order-card:last-child { border-bottom: none; }
+
+.order-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.order-card-top {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .orders-table-wrap { display: none; }
+  .orders-cards-wrap { display: block; }
+  .orders-filter-form .filter-group { width: 100%; }
+  .orders-filter-form .filter-group .form-select { width: 100%; }
+  .orders-filter-form > div:last-child { width: 100%; }
+  .orders-filter-form > div:last-child .btn { flex: 1; }
+}
+</style>
+{% endblock %}

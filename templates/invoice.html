@@ -49,6 +49,17 @@
         </tbody>
     </table>
 
+    {% if order.shipping_lines and order.shipping_lines|length > 0 %}
+    <div class="total-row" style="font-weight: normal; font-size: 10pt; margin-bottom: 2mm; border-bottom: 1px solid #eee; padding-bottom: 2mm;">
+        <span>شیوه ارسال:</span>
+        <span>{{ order.shipping_lines[0].method_title }}</span>
+    </div>
+    {% elif order.shipping_method %}
+    <div class="total-row" style="font-weight: normal; font-size: 10pt; margin-bottom: 2mm; border-bottom: 1px solid #eee; padding-bottom: 2mm;">
+        <span>شیوه ارسال:</span>
+        <span>{{ order.shipping_method }}</span>
+    </div>
+    {% endif %}
     <div class="total-row" style="font-weight: normal; font-size: 10pt; margin-bottom: 2mm; border-bottom: 1px solid #eee; padding-bottom: 2mm;">
         <span>هزینه ارسال:</span>
         <span>{{ order.shipping_total | currency }} تومان</span>
